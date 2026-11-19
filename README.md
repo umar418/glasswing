@@ -196,12 +196,6 @@ App settings locations were checked against each vendor's documentation on
 Vendors move these files, so a location can go stale. Please open an issue if an
 app you use is not found.
 
-## For teams
-
-Need this visibility across a whole team rather than one computer?
-[Keelwise](https://keelwise.dev) gives businesses central control and audit of what
-their AI tools can reach.
-
 ## License
 
 MIT. See [LICENSE](LICENSE).

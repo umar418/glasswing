@@ -55,9 +55,4 @@ def render_markdown(data: dict, ai_summary_markdown: str | None, summary: dict) 
     if data["warnings"]:
         out += ["", "## Files that could not be read", ""]
         out += [f"- {_line(w)}" for w in data["warnings"]]
-    out += [
-        "", "## For teams", "",
-        "Need this visibility across a whole team rather than one computer? [Keelwise](https://keelwise.dev) "
-        "gives businesses central control and audit of what their AI tools can reach.", "",
-    ]
     return "\n".join(out)

@@ -52,7 +52,6 @@ table { width:100%; border-collapse:collapse; font-size:.9rem; } th,td { text-al
 th { color:var(--muted); font-weight:600; } .scroll { overflow-x:auto; }
 ul { margin:6px 0; padding-left:1.25rem; } .fix { margin-top:.4rem; }
 a { color:var(--accent); } footer { margin-top:3rem; color:var(--muted); font-size:.82rem; }
-.keelwise { border-style:dashed; }
 </style>
 </head>
 <body>
@@ -131,10 +130,6 @@ a { color:var(--accent); } footer { margin-top:3rem; color:var(--muted); font-si
 
   {% if d.warnings %}<h2>Files that could not be read</h2>
   <div class="card"><ul>{% for w in d.warnings %}<li>{{ w }}</li>{% endfor %}</ul></div>{% endif %}
-
-  <h2>For teams</h2>
-  <div class="card keelwise"><p>Need this visibility across a whole team rather than one computer?
-    <a href="https://keelwise.dev" rel="noopener noreferrer">Keelwise</a> gives businesses central control and audit of what their AI tools can reach.</p></div>
 
   <footer>Generated on this computer by glasswing v{{ d.version }}. Passwords and keys are masked, so this file is safe to share.
     {{ "An AI summary was requested, so the redacted findings were sent to the model you approved." if ai_html else "Nothing was sent anywhere." }}</footer>
