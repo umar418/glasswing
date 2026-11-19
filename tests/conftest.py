@@ -8,16 +8,18 @@ import pytest
 
 @pytest.fixture
 def fake_home(tmp_path, monkeypatch):
-    """A fake home directory with a Claude Desktop config (filesystem server
+    """A fake home directory with a Cursor MCP config (filesystem server
     scoped to '/', plus a secret-looking token) and a Claude Code settings
-    file with a blanket Bash(*) allow rule.
+    file with a blanket Bash(*) allow rule. Cursor's ~/.cursor/mcp.json is
+    used because it's the same path on every OS, unlike Claude Desktop's.
     """
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Windows expanduser reads this, not HOME
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
-    claude_dir = tmp_path / "Library" / "Application Support" / "Claude"
-    claude_dir.mkdir(parents=True)
-    (claude_dir / "claude_desktop_config.json").write_text(
+    cursor_dir = tmp_path / ".cursor"
+    cursor_dir.mkdir(parents=True)
+    (cursor_dir / "mcp.json").write_text(
         json.dumps(
             {
                 "mcpServers": {

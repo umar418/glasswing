@@ -19,10 +19,9 @@ def test_scan_finds_fixture_findings(fake_home):
 
 
 def test_scan_never_crashes_on_malformed_config(fake_home, tmp_path):
-    bad_dir = fake_home / "Library" / "Application Support" / "Claude"
-    (bad_dir / "claude_desktop_config.json").write_text("{not valid json", encoding="utf-8")
+    (fake_home / ".cursor" / "mcp.json").write_text("{not valid json", encoding="utf-8")
     result = run_scan()  # must not raise
-    assert any("claude_desktop_config.json" in w for w in result.warnings)
+    assert any("mcp.json" in w for w in result.warnings)
 
 
 def test_report_json_never_contains_raw_secret(fake_home):
