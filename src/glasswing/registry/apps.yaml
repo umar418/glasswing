@@ -1,0 +1,148 @@
+# Registry of AI apps/tools glasswing knows how to inspect.
+# Paths use ~ for home dir and %APPDATA% / %LOCALAPPDATA% for Windows env vars.
+# "mcp_key" is the dotted path inside the config JSON where MCP server
+# definitions live (a dict of name -> server config).
+# verified: false means the path/format should be double-checked against
+# current vendor docs before being trusted blindly.
+
+- id: claude-desktop
+  name: Claude Desktop
+  configs:
+    - os: macos
+      path: "~/Library/Application Support/Claude/claude_desktop_config.json"
+      format: json
+      mcp_key: mcpServers
+    - os: windows
+      path: "%APPDATA%/Claude/claude_desktop_config.json"
+      format: json
+      mcp_key: mcpServers
+  logs:
+    - os: macos
+      path: "~/Library/Logs/Claude"
+      glob: "mcp*.log"
+      parser: claude_desktop_mcp_log
+    - os: windows
+      path: "%APPDATA%/Claude/logs"
+      glob: "mcp*.log"
+      parser: claude_desktop_mcp_log
+  verified: true
+
+- id: claude-code
+  name: Claude Code
+  configs:
+    - os: any
+      path: "~/.claude.json"
+      format: json
+      mcp_key: mcpServers
+    - os: any
+      path: "~/.claude/settings.json"
+      format: json
+      permissions_key: permissions
+    - os: any
+      path: "~/.claude/settings.local.json"
+      format: json
+      permissions_key: permissions
+    - os: any
+      path: ".mcp.json"
+      format: json
+      mcp_key: mcpServers
+      project_relative: true
+    - os: any
+      path: ".claude/settings.json"
+      format: json
+      permissions_key: permissions
+      project_relative: true
+    - os: any
+      path: ".claude/settings.local.json"
+      format: json
+      permissions_key: permissions
+      project_relative: true
+  logs:
+    - os: any
+      path: "~/.claude/projects"
+      glob: "**/*.jsonl"
+      parser: claude_code_transcript
+  project_list_source: "~/.claude.json"
+  verified: true
+
+- id: cursor
+  name: Cursor
+  configs:
+    - os: any
+      path: "~/.cursor/mcp.json"
+      format: json
+      mcp_key: mcpServers
+    - os: any
+      path: ".cursor/mcp.json"
+      format: json
+      mcp_key: mcpServers
+      project_relative: true
+  logs: []
+  verified: false
+
+- id: vscode
+  name: VS Code (Copilot / MCP)
+  configs:
+    - os: macos
+      path: "~/Library/Application Support/Code/User/mcp.json"
+      format: json
+      mcp_key: servers
+    - os: windows
+      path: "%APPDATA%/Code/User/mcp.json"
+      format: json
+      mcp_key: servers
+    - os: linux
+      path: "~/.config/Code/User/mcp.json"
+      format: json
+      mcp_key: servers
+    - os: any
+      path: ".vscode/mcp.json"
+      format: json
+      mcp_key: servers
+      project_relative: true
+  logs: []
+  verified: false
+
+- id: windsurf
+  name: Windsurf
+  configs:
+    - os: any
+      path: "~/.codeium/windsurf/mcp_config.json"
+      format: json
+      mcp_key: mcpServers
+  logs: []
+  verified: false
+
+- id: gemini-cli
+  name: Gemini CLI
+  configs:
+    - os: any
+      path: "~/.gemini/settings.json"
+      format: json
+      mcp_key: mcpServers
+  logs: []
+  verified: false
+
+- id: codex-cli
+  name: Codex CLI
+  configs:
+    - os: any
+      path: "~/.codex/config.toml"
+      format: toml
+      mcp_key: mcp_servers
+  logs: []
+  verified: false
+
+- id: continue
+  name: Continue
+  configs:
+    - os: any
+      path: "~/.continue/config.yaml"
+      format: yaml
+      mcp_key: mcpServers
+    - os: any
+      path: "~/.continue/config.json"
+      format: json
+      mcp_key: mcpServers
+  logs: []
+  verified: false

@@ -1,0 +1,107 @@
+# Rule metadata. Each id is checked by matching logic in analysis/rules.py;
+# this file only holds the human-facing text and severity so wording can be
+# tuned without touching code. severity: info|low|medium|high|critical
+- id: FS-ROOT-SCOPE
+  severity: critical
+  title: "Filesystem access scoped to your whole drive or home folder"
+  explanation: >
+    This AI tool's filesystem server is configured to reach your entire
+    home directory or disk, not a specific project folder. Anything it
+    reads or writes, it can do anywhere on your machine.
+  fix: >
+    Edit the server's config and replace the broad path with one or more
+    specific project directories.
+
+- id: SHELL-BLANKET-ALLOW
+  severity: critical
+  title: "Shell command execution is auto-approved with no restriction"
+  explanation: >
+    This tool can run arbitrary shell commands without asking you first
+    (a blanket allow rule such as Bash(*) or a bypass-permissions mode).
+  fix: >
+    Remove the blanket allow rule and require approval per command, or
+    scope it to a specific allowlist of commands.
+
+- id: SECRET-PLAINTEXT-CONFIG
+  severity: high
+  title: "Plain-text API key found in an AI tool config"
+  explanation: >
+    A live-looking API key or token is stored in plain text inside a
+    config file this AI tool reads.
+  fix: >
+    Move the value to an environment variable or your OS keychain, and
+    rotate the key since it may already be exposed in backups or syncs.
+
+- id: MCP-UNPINNED-UNKNOWN-PUBLISHER
+  severity: high
+  title: "MCP server runs via unpinned npx/uvx from an unrecognized publisher"
+  explanation: >
+    This server is launched with `npx -y` or `uvx` without a pinned
+    version, from a publisher not on our known-vendor list. Every run
+    can silently pull different, unreviewed code (a supply-chain risk).
+  fix: >
+    Pin an exact version, or switch to a package from a publisher you
+    recognize and trust.
+
+- id: AI-TOUCHED-CREDENTIAL-LOCATION
+  severity: high
+  title: "AI tool activity touched a credential location"
+  explanation: >
+    Logged activity shows a read or write inside .ssh, .aws, .env, or a
+    similar credential location.
+  fix: >
+    Review what was read/written there, rotate any exposed credentials,
+    and restrict that tool's filesystem scope to exclude the location.
+
+- id: MCP-REMOTE-UNKNOWN-DOMAIN
+  severity: high
+  title: "Remote MCP server points at an unrecognized domain"
+  explanation: >
+    This server talks to a remote URL (http/sse) that isn't a
+    well-known vendor domain, so data sent to it leaves your machine to
+    an unverified third party.
+  fix: >
+    Confirm the domain is one you trust before keeping this server
+    enabled; remove it if you don't recognize the operator.
+
+- id: EXFIL-PATH-READ-AND-NETWORK
+  severity: medium
+  title: "Same tool can read sensitive files and also reach the network"
+  explanation: >
+    One server combines read access to sensitive-looking paths with the
+    ability to make outbound network calls — a path for data to leave
+    your machine without you noticing.
+  fix: >
+    Split these capabilities across separate, narrowly-scoped servers,
+    or disable the network capability if you don't need it here.
+
+- id: SENSITIVE-FOLDER-ACCESSED-RECENTLY
+  severity: medium
+  title: "Sensitive-keyword folder accessed by AI in the last 30 days"
+  explanation: >
+    Recent activity shows this AI tool reading or writing inside a
+    folder whose name matches a sensitive keyword (medical, legal,
+    tax, etc.).
+  fix: >
+    Review the specific files touched and confirm that was intended;
+    narrow this tool's scope if it should not have reached that folder.
+
+- id: SERVER-UNUSED-60D
+  severity: low
+  title: "MCP server configured but unused for 60+ days"
+  explanation: >
+    This server hasn't shown any activity in over 60 days. Unused
+    access is still access — it adds risk with no benefit.
+  fix: >
+    Remove it from the config if you no longer need it ("remove what
+    you don't use").
+
+- id: PERMISSIONS-BROAD-WRITE
+  severity: high
+  title: "Broad write permission granted beyond a specific path"
+  explanation: >
+    A permission rule grants write access broadly rather than to a
+    specific path or command.
+  fix: >
+    Scope the permission rule down to the exact paths/commands this
+    tool actually needs.

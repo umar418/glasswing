@@ -1,0 +1,27 @@
+# Cloud/provider-side connections glasswing cannot see from the local
+# machine. Shown in the report as a manual checklist. Verify these URLs
+# periodically -- vendors move settings pages.
+- provider: Google Account
+  what: "Third-party apps & services with account access"
+  url: "https://myaccount.google.com/connections"
+- provider: Microsoft Account
+  what: "Apps and services with access to your account"
+  url: "https://account.live.com/consent/Manage"
+- provider: GitHub
+  what: "Authorized OAuth apps"
+  url: "https://github.com/settings/applications"
+- provider: GitHub
+  what: "Installed GitHub Apps"
+  url: "https://github.com/settings/installations"
+- provider: Slack
+  what: "Installed apps and integrations"
+  url: "https://slack.com/apps/manage"
+- provider: Claude (claude.ai)
+  what: "Connectors and connected apps"
+  url: "https://claude.ai/settings/connectors"
+- provider: ChatGPT (chatgpt.com)
+  what: "Connectors and connected apps"
+  url: "https://chatgpt.com/#settings/Connectors"
+- provider: Gemini (gemini.google.com)
+  what: "Connected apps / extensions"
+  url: "https://myaccount.google.com/connections"

@@ -1,0 +1,46 @@
+# Known-server table used to infer capability class + trust for common
+# MCP server packages, keyed by a substring match against the server's
+# command/args/package name. First match wins; unmatched servers fall back
+# to heuristic inference in analysis/capabilities.py.
+- match: "@modelcontextprotocol/server-filesystem"
+  capability: filesystem
+  trust: official
+- match: "@modelcontextprotocol/server-everything"
+  capability: filesystem
+  trust: official
+- match: "mcp-server-sqlite"
+  capability: database
+  trust: community
+- match: "@modelcontextprotocol/server-sequential-thinking"
+  capability: other
+  trust: official
+- match: "@modelcontextprotocol/server-github"
+  capability: cloud_infra
+  trust: official
+- match: "@modelcontextprotocol/server-gdrive"
+  capability: drive
+  trust: official
+- match: "@modelcontextprotocol/server-slack"
+  capability: email_or_chat
+  trust: official
+- match: "@modelcontextprotocol/server-brave-search"
+  capability: network
+  trust: official
+- match: "@modelcontextprotocol/server-puppeteer"
+  capability: browser
+  trust: official
+- match: "playwright"
+  capability: browser
+  trust: community
+- match: "server-postgres"
+  capability: database
+  trust: official
+- match: "stripe"
+  capability: payments
+  trust: community
+- match: "google-calendar"
+  capability: calendar
+  trust: community
+- match: "gmail"
+  capability: email_or_chat
+  trust: community
