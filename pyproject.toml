@@ -1,6 +1,6 @@
 [project]
 name = "glasswing"
-version = "0.1.0"
+version = "0.2.0"
 description = "Free, local-only scanner: see what you've given AI tools access to, what they've touched, and what to lock down."
 readme = "README.md"
 requires-python = ">=3.10"

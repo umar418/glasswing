@@ -1,209 +1,218 @@
 from __future__ import annotations
 
 import json
+import sys
+import tempfile
 import webbrowser
 from pathlib import Path
 from typing import Optional
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from glasswing import __version__
-from glasswing.config import CONFIG_PATH, REPORTS_DIR, load_config, mark_consented, save_config
-from glasswing.report.html import render_html
-from glasswing.report.json_report import render_json
-from glasswing.report.md_report import render_markdown
+from glasswing import config as cfg
+from glasswing.parsers.secrets import scrub
+from glasswing.report import render_all
+from glasswing.report.safe_view import safe_scan
 from glasswing.scanner import run_scan
-from glasswing.summary import providers as providers_mod
+from glasswing.summary import providers
 from glasswing.summary.redact import build_redacted_payload
 from glasswing.summary.template import build_template_summary
 
 app = typer.Typer(
     name="glasswing",
-    help="See what you've given AI tools access to, what they've touched, and what to lock down. Local-only.",
-    no_args_is_help=False,
+    help="See what you've given AI tools access to and what to lock down. Runs only on this computer.",
     add_completion=False,
 )
-console = Console()
+out = Console()  # results
+err = Console(stderr=True)  # progress and notes, so --json output on stdout stays pure JSON
 
 
-def _latest_report_dir() -> Optional[Path]:
-    if not REPORTS_DIR.is_dir():
+def _ai_summary(data: dict, raw_secrets: set[str], no_ai: bool, interactive: bool) -> Optional[str]:
+    """Returns AI-written markdown, or None to use the built-in summary. Never raises."""
+    settings = cfg.load_config()
+    choice = settings["ai_provider"]
+    if no_ai or choice == "none":
         return None
-    candidates = sorted([d for d in REPORTS_DIR.iterdir() if d.is_dir()], reverse=True)
-    return candidates[0] if candidates else None
+    payload = json.loads(scrub(json.dumps(build_redacted_payload(data)), raw_secrets))
+
+    if choice in ("auto", "ollama"):
+        model = providers.detect_ollama_model()
+        if model:
+            err.print(f"[dim]Writing the summary with your local model ({escape(model)}). Nothing leaves this computer.[/dim]")
+            text = providers.call_ollama(model, payload)
+            if text:
+                return text
+            err.print("[yellow]The local model did not answer; using the built-in summary.[/yellow]")
+            return None
+        if choice == "ollama":
+            err.print("[yellow]No local Ollama model found; using the built-in summary.[/yellow]")
+            return None
+
+    key = providers.anthropic_key()
+    if not key:
+        return None
+    if "anthropic" not in settings["consented_providers"]:
+        if not interactive:
+            err.print("[dim]A cloud AI key is set but has not been approved for Glasswing; using the built-in summary.[/dim]")
+            return None
+        err.print("\n[bold]Send a redacted summary to Anthropic for a plain-language write-up?[/bold]")
+        err.print("This is exactly what would be sent (no file contents, no passwords or keys):\n")
+        err.print(escape(json.dumps(payload, indent=2)), highlight=False)
+        if not typer.confirm("\nSend this?", default=False, err=True):
+            err.print("[dim]Not sent. Using the built-in summary.[/dim]")
+            return None
+        cfg.mark_consented("anthropic")
+    text = providers.call_anthropic(key, payload)
+    if not text:
+        err.print("[yellow]The cloud model did not answer; using the built-in summary.[/yellow]")
+    return text
 
 
-def _resolve_ai_summary(scan, no_ai: bool) -> tuple[Optional[str], Optional[dict]]:
-    template_summary = build_template_summary(scan)
-    if no_ai:
-        return None, template_summary
-
-    payload = build_redacted_payload(scan)
-
-    model = providers_mod.detect_ollama_model()
-    if model:
-        console.print(f"[dim]Using local Ollama model '{model}' for the AI summary (nothing leaves your machine).[/dim]")
-        text = providers_mod.call_ollama(model, payload)
-        if text:
-            return text, template_summary
-        console.print("[yellow]Local model call failed; falling back to the built-in template summary.[/yellow]")
-        return None, template_summary
-
-    byo = providers_mod.available_byo_provider()
-    if byo:
-        provider, api_key = byo
-        if provider != "anthropic":
-            console.print(
-                f"[yellow]{provider.title()} key found, but that provider isn't wired up yet in this release. "
-                "Falling back to the built-in template summary.[/yellow]"
-            )
-            return None, template_summary
-
-        config = load_config()
-        if provider not in config.get("consented_providers", []):
-            console.print("\n[bold]Cloud AI summary[/bold]")
-            console.print(f"An {provider.title()} API key was found. Exactly this redacted JSON would be sent:\n")
-            console.print(json.dumps(payload, indent=2)[:4000])
-            if not typer.confirm(f"\nSend this to {provider.title()} for a plain-language summary?", default=False):
-                console.print("[dim]Skipping cloud summary; using the built-in template summary instead.[/dim]")
-                return None, template_summary
-            mark_consented(provider)
-
-        text = providers_mod.call_anthropic(api_key, payload)
-        if text:
-            return text, template_summary
-        console.print("[yellow]Cloud call failed; falling back to the built-in template summary.[/yellow]")
-        return None, template_summary
-
-    console.print("[dim]No local model or API key found; using the built-in template summary (--no-ai to skip this check).[/dim]")
-    return None, template_summary
+def _write_reports(data: dict, started_at, files: dict[str, str]) -> Path:
+    stamp = started_at.strftime("%Y%m%dT%H%M%S")
+    for base in (cfg.reports_dir(), Path(tempfile.gettempdir()) / "glasswing-reports"):
+        try:
+            target = base / stamp
+            target.mkdir(parents=True, exist_ok=True)
+            for name, content in files.items():
+                (target / name).write_text(content, encoding="utf-8")
+            return target
+        except OSError:
+            continue
+    raise typer.Exit(2)
 
 
-def _write_reports(scan, ai_summary_markdown, template_summary) -> Path:
-    timestamp = scan.started_at.strftime("%Y%m%dT%H%M%S")
-    out_dir = REPORTS_DIR / timestamp
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    (out_dir / "report.html").write_text(render_html(scan, ai_summary_markdown, template_summary), encoding="utf-8")
-    (out_dir / "report.json").write_text(render_json(scan, ai_summary_markdown, template_summary), encoding="utf-8")
-    (out_dir / "summary.md").write_text(render_markdown(scan, ai_summary_markdown, template_summary), encoding="utf-8")
-    return out_dir
-
-
-def _print_terminal_summary(scan) -> None:
-    console.print(f"\n[bold]Exposure level: {scan.exposure_level}[/bold]")
-    counts: dict[str, int] = {}
-    for f in scan.findings:
-        counts[f.severity] = counts.get(f.severity, 0) + 1
-    table = Table(show_header=True, header_style="bold")
-    table.add_column("Severity")
-    table.add_column("Count")
-    for sev in ("critical", "high", "medium", "low", "info"):
-        if counts.get(sev):
-            table.add_row(sev.upper(), str(counts[sev]))
-    console.print(table)
-
-    if scan.findings:
-        console.print("\n[bold]Top findings:[/bold]")
-        for f in sorted(scan.findings, key=lambda x: x.severity, reverse=True)[:3]:
-            console.print(f"  [{f.severity.upper()}] {f.title} — {f.subject}")
+def _print_summary(data: dict) -> None:
+    out.print(f"\n[bold]Exposure level: {data['exposure_level']}[/bold]")
+    found = [a["app_name"] for a in data["apps"] if a["found"]]
+    out.print(f"Apps with settings found: {escape(', '.join(found)) if found else 'none'}")
+    if data["severity_counts"]:
+        table = Table(show_header=True, header_style="bold")
+        table.add_column("Severity")
+        table.add_column("Findings")
+        for sev in ("critical", "high", "medium", "low", "info"):
+            if data["severity_counts"].get(sev):
+                table.add_row(sev.upper(), str(data["severity_counts"][sev]))
+        out.print(table)
+        out.print("[bold]Top findings:[/bold]")
+        for f in data["findings"][:3]:
+            times = f" (x{f['count']})" if f["count"] > 1 else ""
+            out.print(escape(f"  [{f['severity'].upper()}] {f['title']}{times} - {f['subject']}"), highlight=False)
+    else:
+        out.print("No risky settings found in the apps checked.")
+    if data["warnings"]:
+        out.print(f"[yellow]{len(data['warnings'])} file(s) could not be read; see the report.[/yellow]")
 
 
 @app.command()
 def scan(
-    no_ai: bool = typer.Option(False, "--no-ai", help="Skip any AI summary; use the deterministic template summary."),
-    json_out: bool = typer.Option(False, "--json", help="Print machine-readable JSON to stdout instead of a human summary."),
-    extra_root: list[str] = typer.Option([], "--project-root", help="Additional project directory to scan for configs (repeatable)."),
+    no_ai: bool = typer.Option(False, "--no-ai", help="Never contact any AI model; use the built-in summary."),
+    json_out: bool = typer.Option(False, "--json", help="Print machine-readable JSON to stdout and write no files."),
+    extra_root: list[str] = typer.Option([], "--project-root", help="Extra folder to search for project settings (repeatable)."),
     open_report: bool = typer.Option(True, help="Open the HTML report when done."),
 ):
-    """Discover AI apps, MCP servers, permissions and secrets; score risk; write a report."""
+    """Find AI apps, their MCP servers, permissions and stored credentials; score the risk; write a report."""
+    roots = list(extra_root) + list(cfg.load_config()["extra_project_roots"])
+    result = run_scan(roots or None)
+    raw = result.raw_secrets
+    data = safe_scan(result)
+    summary = build_template_summary(data)
+    ai_text = _ai_summary(data, raw, no_ai, interactive=not json_out and sys.stdin.isatty())
+    data, summary, files = render_all(result, ai_text)
+
     if json_out:
-        result = run_scan(extra_root or None)
-        ai_summary_markdown, template_summary = (None, build_template_summary(result)) if no_ai else _resolve_ai_summary(result, no_ai)
-        print(render_json(result, ai_summary_markdown, template_summary))
+        sys.stdout.write(files["report.json"] + "\n")
         return
-
-    with console.status("[bold]Scanning your AI tools...[/bold]"):
-        result = run_scan(extra_root or None)
-    ai_summary_markdown, template_summary = _resolve_ai_summary(result, no_ai)
-    out_dir = _write_reports(result, ai_summary_markdown, template_summary)
-
-    _print_terminal_summary(result)
-    console.print(f"\nReport written to [bold]{out_dir / 'report.html'}[/bold]")
-
+    try:
+        target = _write_reports(data, result.started_at, files)
+    except typer.Exit:
+        err.print("[red]Could not write the report files (no writable folder).[/red]")
+        _print_summary(data)
+        raise
+    _print_summary(data)
+    report = target / "report.html"
+    out.print("\nReport written to:")
+    out.print(escape(str(report)), highlight=False, soft_wrap=True)
     if open_report:
-        webbrowser.open(f"file://{out_dir / 'report.html'}")
+        try:
+            webbrowser.open(report.resolve().as_uri())
+        except Exception:
+            pass
 
 
 @app.command()
 def report():
     """Re-open the most recent report."""
-    latest = _latest_report_dir()
+    base = cfg.reports_dir()
+    latest = sorted((d for d in base.iterdir() if (d / "report.html").is_file()), reverse=True) if base.is_dir() else []
     if not latest:
-        console.print("[yellow]No report found yet. Run 'glasswing scan' first.[/yellow]")
+        err.print("[yellow]No report found yet. Run 'glasswing scan' first.[/yellow]")
         raise typer.Exit(1)
-    webbrowser.open(f"file://{latest / 'report.html'}")
-    console.print(f"Opened {latest / 'report.html'}")
+    path = latest[0] / "report.html"
+    webbrowser.open(path.resolve().as_uri())
+    out.print(escape(str(path)), highlight=False, soft_wrap=True)
 
 
 @app.command()
-def history(
-    since: str = typer.Option("7d", help="Lookback window, e.g. 7d, 30d."),
-    app_filter: Optional[str] = typer.Option(None, "--app", help="Filter to one app id."),
-):
-    """Timeline of AI tool activity found in local logs. (Coming in a later release.)"""
-    console.print(
-        "[yellow]Activity-log parsing (Claude Code transcripts, Claude Desktop MCP logs) isn't in this release yet.[/yellow]\n"
-        "Phase 1 covers inventory + risk scoring; 'history' ships in Phase 2. See the project README for the roadmap."
-    )
+def history():
+    """Timeline of AI tool activity. Not available yet."""
+    err.print("Glasswing does not read activity logs yet. This version reports what your AI tools are able to do, not what they did.")
+    raise typer.Exit(1)
 
 
-track_app = typer.Typer(help="Live MCP call logging via a local proxy. (Coming in a later release.)")
+track_app = typer.Typer(help="Live logging of MCP tool calls. Not available yet.")
 app.add_typer(track_app, name="track")
 
 
-@track_app.command("enable")
-def track_enable():
-    console.print("[yellow]Live tracking (the MCP logging proxy) isn't in this release yet -- it ships in Phase 3.[/yellow]")
+def _track_unavailable():
+    err.print("Live tracking is not available yet. No settings were changed.")
+    raise typer.Exit(1)
 
 
-@track_app.command("disable")
-def track_disable():
-    console.print("[yellow]Live tracking isn't in this release yet -- nothing to disable.[/yellow]")
-
-
-@track_app.command("status")
-def track_status():
-    console.print("[yellow]Live tracking isn't in this release yet.[/yellow]")
+track_app.command("enable")(_track_unavailable)
+track_app.command("disable")(_track_unavailable)
+track_app.command("status")(_track_unavailable)
 
 
 @app.command()
 def config(
-    show: bool = typer.Option(False, "--show", help="Print the current config."),
-    set_provider: Optional[str] = typer.Option(None, "--ai-provider", help="ollama | anthropic | openai | gemini | none"),
+    ai_provider: Optional[str] = typer.Option(None, "--ai-provider", help="auto | ollama | anthropic | none"),
+    add_project_root: Optional[str] = typer.Option(None, "--add-project-root", help="Always search this folder for project settings."),
+    forget_consent: bool = typer.Option(False, "--forget-consent", help="Ask again before any cloud AI call."),
 ):
-    """View or change settings (AI summary provider, project roots, etc.) stored in ~/.glasswing/config.json."""
-    cfg = load_config()
-    if set_provider is not None:
-        cfg["ai_provider"] = None if set_provider.lower() == "none" else set_provider.lower()
-        save_config(cfg)
-        console.print(f"Saved ai_provider = {cfg['ai_provider']}")
-        return
-    console.print(f"Config file: {CONFIG_PATH}")
-    console.print(json.dumps(cfg, indent=2))
+    """Show or change Glasswing's own settings (~/.glasswing/config.json)."""
+    settings = cfg.load_config()
+    changed = False
+    if ai_provider is not None:
+        if ai_provider.lower() not in cfg.AI_PROVIDERS:
+            err.print(f"[red]Unknown provider. Choose one of: {', '.join(cfg.AI_PROVIDERS)}[/red]")
+            raise typer.Exit(2)
+        settings["ai_provider"], changed = ai_provider.lower(), True
+    if add_project_root:
+        if add_project_root not in settings["extra_project_roots"]:
+            settings["extra_project_roots"].append(add_project_root)
+        changed = True
+    if forget_consent:
+        settings["consented_providers"], changed = [], True
+    if changed:
+        cfg.save_config(settings)
+    out.print(escape(str(cfg.config_path())), highlight=False)
+    out.print(escape(json.dumps(settings, indent=2)), highlight=False)
 
 
 @app.command()
 def version():
     """Print the glasswing version."""
-    console.print(__version__)
+    out.print(__version__)
 
 
 def _version_callback(value: bool):
     if value:
-        console.print(__version__)
+        out.print(__version__)
         raise typer.Exit()
 
 
@@ -213,7 +222,7 @@ def main(
     show_version: bool = typer.Option(False, "--version", callback=_version_callback, is_eager=True, help="Print the version and exit."),
 ):
     if ctx.invoked_subcommand is None:
-        ctx.invoke(scan)
+        ctx.invoke(scan, no_ai=False, json_out=False, extra_root=[], open_report=True)
 
 
 if __name__ == "__main__":

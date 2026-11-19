@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:">
+<title>Glasswing report — Critical exposure</title>
+<style>
+:root { --bg:#f7f7f5; --fg:#1c1c21; --muted:#62626d; --card:#fff; --border:#e2e2e6; --accent:#3f4bd8;
+  --info:#6b7280; --low:#2563eb; --medium:#b45309; --high:#c2410c; --critical:#b91c1c; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#131318; --fg:#ececf1; --muted:#a3a3ad; --card:#1c1c24; --border:#2e2e3a; --accent:#8b93ff;
+    --low:#60a5fa; --medium:#f59e0b; --high:#fb923c; --critical:#f87171; } }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.55 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+.wrap { max-width:900px; margin:0 auto; padding:32px 16px 80px; }
+h1 { font-size:1.5rem; margin:0 0 4px; } h2 { font-size:1.15rem; margin:2.4rem 0 .6rem; }
+h3 { font-size:1rem; margin:1rem 0 .3rem; }
+.meta { color:var(--muted); font-size:.88rem; overflow-wrap:anywhere; }
+.badge { display:inline-block; padding:5px 14px; border-radius:999px; font-weight:700; color:#fff; }
+.badge.Low { background:#2563eb; } .badge.Moderate { background:#b45309; } .badge.High { background:#c2410c; } .badge.Critical { background:#b91c1c; }
+.card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 18px; margin:10px 0; overflow-wrap:anywhere; }
+.sev { font-weight:700; font-size:.78rem; letter-spacing:.04em; }
+.sev.info{color:var(--info);} .sev.low{color:var(--low);} .sev.medium{color:var(--medium);} .sev.high{color:var(--high);} .sev.critical{color:var(--critical);}
+.finding { border-left:4px solid var(--border); }
+.finding.critical{border-left-color:var(--critical);} .finding.high{border-left-color:var(--high);} .finding.medium{border-left-color:var(--medium);} .finding.low{border-left-color:var(--low);}
+.finding h3 { margin:.1rem 0 .3rem; }
+code, .mono { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.84em; }
+code { background:var(--border); padding:1px 5px; border-radius:4px; }
+.filters { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0; }
+.filters button, .filters select { border:1px solid var(--border); background:var(--card); color:var(--fg); border-radius:6px; padding:5px 11px; font:inherit; font-size:.85rem; cursor:pointer; }
+.filters button[aria-pressed="true"] { background:var(--accent); color:#fff; border-color:var(--accent); }
+table { width:100%; border-collapse:collapse; font-size:.9rem; } th,td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--border); vertical-align:top; }
+th { color:var(--muted); font-weight:600; } .scroll { overflow-x:auto; }
+ul { margin:6px 0; padding-left:1.25rem; } .fix { margin-top:.4rem; }
+a { color:var(--accent); } footer { margin-top:3rem; color:var(--muted); font-size:.82rem; }
+.keelwise { border-style:dashed; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Glasswing report</h1>
+  <p class="meta">2026-11-20T04:43:01 · macos · 3 settings file(s) read in 0.0s · glasswing v0.1.0</p>
+  <p><span class="badge Critical">Critical exposure</span></p>
+
+  <h2>Summary</h2>
+  <div class="card">
+    
+      <p>The level is set by the most serious issue found (critical): file access covers your whole disk or home folder. In total: 2 critical, 2 high, 3 medium, 1 low.</p>
+      <h3>Fix these first</h3><ol>
+        <li><strong>File access covers your whole disk or home folder</strong> <span class="meta">— Claude Desktop</span><br>Open the config file shown and replace the broad path with the specific folder(s) the tool actually needs.</li><li><strong>Any shell command can run without asking you</strong> <span class="meta">— Claude Code</span><br>Delete the rule shown from the &#34;allow&#34; list and allow only the specific commands you need (for example &#34;Bash(npm test:*)&#34;).</li><li><strong>Runs the newest version of a package Glasswing doesn&#39;t recognise</strong> <span class="meta">— Claude Desktop</span><br>Check who publishes the package. If you trust it, pin an exact version (for example &#34;name@1.2.3&#34;); otherwise remove the server.</li><li><strong>A password or API key is stored in plain text</strong> <span class="meta">— Claude Desktop</span><br>Replace the value with an environment-variable reference or your password manager, then change (rotate) the credential, since it has been exposed.</li><li><strong>One app has both broad file access and a way to send data out</strong> <span class="meta">— Claude Desktop</span><br>Narrow the file access to a project folder, or remove the internet-facing server you don&#39;t need.</li>
+      </ol>
+    
+  </div>
+
+  <h2>Findings (8)</h2>
+  
+  <div class="filters" id="filters">
+    <button data-sev="all" aria-pressed="true">All</button>
+    <button data-sev="critical" aria-pressed="false">Critical (2)</button><button data-sev="high" aria-pressed="false">High (2)</button><button data-sev="medium" aria-pressed="false">Medium (3)</button><button data-sev="low" aria-pressed="false">Low (1)</button>
+    <select id="appFilter" aria-label="Filter by app"><option value="">All apps</option><option>Claude Desktop</option><option>Claude Code</option><option>Cursor</option></select>
+    <select id="sortBy" aria-label="Sort findings"><option value="sev">Most serious first</option><option value="app">By app</option></select>
+  </div>
+  <div id="findings">
+  
+    <div class="card finding critical" data-sev="critical" data-subject="Claude Desktop" data-order="1">
+      <span class="sev critical">CRITICAL</span> <code>FS-ROOT-SCOPE</code>
+      <h3>File access covers your whole disk or home folder</h3>
+      <div class="meta">Where: Claude Desktop</div>
+      <ul class="mono"><li>server &#39;my-files&#39;: covers your entire home folder: /Users/dana — in /Users/dana/Library/Application Support/Claude/claude_desktop_config.json</li></ul>
+      <div>This file-access server is pointed at your entire disk, all user folders, or your whole home folder instead of one project folder. The AI tool can read (and usually change) any file there, including documents, saved passwords and keys.</div>
+      <div class="fix"><strong>Fix:</strong> Open the config file shown and replace the broad path with the specific folder(s) the tool actually needs.</div>
+    </div>
+  
+    <div class="card finding critical" data-sev="critical" data-subject="Claude Code" data-order="2">
+      <span class="sev critical">CRITICAL</span> <code>SHELL-BLANKET-ALLOW</code>
+      <h3>Any shell command can run without asking you</h3>
+      <div class="meta">Where: Claude Code</div>
+      <ul class="mono"><li>Bash(*) — in /Users/dana/.claude/settings.json</li></ul>
+      <div>A permission rule lets this tool run every shell command without a confirmation prompt. That is the same as letting it do anything you can do on this computer.</div>
+      <div class="fix"><strong>Fix:</strong> Delete the rule shown from the &#34;allow&#34; list and allow only the specific commands you need (for example &#34;Bash(npm test:*)&#34;).</div>
+    </div>
+  
+    <div class="card finding high" data-sev="high" data-subject="Claude Desktop" data-order="3">
+      <span class="sev high">HIGH</span> <code>MCP-UNPINNED-UNRECOGNISED</code>
+      <h3>Runs the newest version of a package Glasswing doesn&#39;t recognise</h3>
+      <div class="meta">Where: Claude Desktop</div>
+      <ul class="mono"><li>server &#39;notes&#39;: package quick-notes-mcp, launched with: npx -y quick-notes-mcp — in /Users/dana/Library/Application Support/Claude/claude_desktop_config.json</li></ul>
+      <div>This server is downloaded and run from the internet each time, with no fixed version, and its package is not on Glasswing&#39;s list of widely used servers. If the package is ever tampered with, the new code runs on your computer automatically.</div>
+      <div class="fix"><strong>Fix:</strong> Check who publishes the package. If you trust it, pin an exact version (for example &#34;name@1.2.3&#34;); otherwise remove the server.</div>
+    </div>
+  
+    <div class="card finding high" data-sev="high" data-subject="Claude Desktop" data-order="4">
+      <span class="sev high">HIGH</span> <code>SECRET-PLAINTEXT-CONFIG</code>
+      <h3>A password or API key is stored in plain text</h3>
+      <div class="meta">Where: Claude Desktop</div>
+      <ul class="mono"><li>server &#39;notes&#39;: Anthropic API key (env NOTES_API_KEY): sk-a…BnKr — in /Users/dana/Library/Application Support/Claude/claude_desktop_config.json</li></ul>
+      <div>A credential is written directly in this config file. Anyone or anything that can read the file (backups, cloud sync, other apps, the AI tool itself) can copy it.</div>
+      <div class="fix"><strong>Fix:</strong> Replace the value with an environment-variable reference or your password manager, then change (rotate) the credential, since it has been exposed.</div>
+    </div>
+  
+    <div class="card finding medium" data-sev="medium" data-subject="Claude Desktop" data-order="5">
+      <span class="sev medium">MEDIUM</span> <code>EXFIL-PATH</code>
+      <h3>One app has both broad file access and a way to send data out</h3>
+      <div class="meta">Where: Claude Desktop</div>
+      <ul class="mono"><li>file access: my-files; reaches the internet: billing-sync, web-fetch</li></ul>
+      <div>The same app has a server with broad file access and another that reaches the internet. Together they form a path for private files to leave your computer if the AI is tricked by a malicious document or web page.</div>
+      <div class="fix"><strong>Fix:</strong> Narrow the file access to a project folder, or remove the internet-facing server you don&#39;t need.</div>
+    </div>
+  
+    <div class="card finding medium" data-sev="medium" data-subject="Claude Desktop" data-order="6">
+      <span class="sev medium">MEDIUM</span> <code>MCP-REMOTE-UNRECOGNISED</code>
+      <h3>Connects to an online service Glasswing doesn&#39;t recognise</h3>
+      <div class="meta">Where: Claude Desktop</div>
+      <ul class="mono"><li>server &#39;billing-sync&#39;: domain hooks.acme-billing.example.net (https://hooks.acme-billing.example.net/mcp/u/&lt;redacted-id&gt;/sse) — in /Users/dana/Library/Application Support/Claude/claude_desktop_config.json</li></ul>
+      <div>This server runs on someone else&#39;s computers at the address shown. Whatever the AI tool sends it leaves your machine. Glasswing does not recognise the domain, which does not mean it is unsafe -- only that you should confirm who runs it.</div>
+      <div class="fix"><strong>Fix:</strong> Confirm you know and trust the operator of this address; remove the server if you don&#39;t.</div>
+    </div>
+  
+    <div class="card finding medium" data-sev="medium" data-subject="Claude Desktop" data-order="7">
+      <span class="sev medium">MEDIUM</span> <code>SECRET-IN-URL</code>
+      <h3>A server address appears to contain an access token</h3>
+      <div class="meta">Where: Claude Desktop</div>
+      <ul class="mono"><li>server &#39;billing-sync&#39;: Long access token in the URL path (command arguments): u7Hq…6AeU — in /Users/dana/Library/Application Support/Claude/claude_desktop_config.json</li></ul>
+      <div>The address of this server includes what looks like a private token or password. Anyone who sees the address can likely use the connection as you.</div>
+      <div class="fix"><strong>Fix:</strong> Treat the address like a password. If the service offers header- or login-based access, switch to that and regenerate the address.</div>
+    </div>
+  
+    <div class="card finding low" data-sev="low" data-subject="Claude Desktop" data-order="8">
+      <span class="sev low">LOW</span> <code>MCP-UNPINNED-RECOGNISED</code> <span class="meta">seen 3 times</span>
+      <h3>Runs the newest version of a package with no fixed version</h3>
+      <div class="meta">Where: Claude Desktop</div>
+      <ul class="mono"><li>server &#39;my-files&#39;: package @modelcontextprotocol/server-filesystem, launched with: npx -y @modelcontextprotocol/server-filesystem /Users/dana — in /Users/dana/Library/Application Support/Claude/claude_desktop_config.json</li><li>server &#39;web-fetch&#39;: package mcp-server-fetch, launched with: uvx mcp-server-fetch — in /Users/dana/Library/Application Support/Claude/claude_desktop_config.json</li><li>server &#39;billing-sync&#39;: package mcp-remote, launched with: npx -y mcp-remote https://hooks.acme-billing.example.net/mcp/u/&lt;redacted-id&gt;/sse — in /Users/dana/Library/Application Support/Claude/claude_desktop_config.json</li></ul>
+      <div>This server uses a widely used package but downloads the newest version each time, so an update you never reviewed can run automatically.</div>
+      <div class="fix"><strong>Fix:</strong> Pin an exact version (for example &#34;name@1.2.3&#34;).</div>
+    </div>
+  
+  </div>
+  
+
+  <h2>Apps checked</h2>
+  
+    <div class="card">
+      <strong>Claude Desktop</strong>
+      
+        <div class="meta">1 settings file(s):
+          /Users/dana/Library/Application Support/Claude/claude_desktop_config.json</div>
+        <div class="scroll"><table>
+          <thead><tr><th>Server</th><th>What it can do</th><th>Where it comes from</th><th>File access</th></tr></thead><tbody>
+          <tr>
+            <td><strong>my-files</strong></td>
+            <td>reads and writes files<br><span class="meta">recognised package</span></td>
+            <td>widely used package via npx (no fixed version)<br><span class="meta mono">@modelcontextprotocol/server-filesystem</span></td>
+            <td><span class="sev high">entire home folder</span></td>
+          </tr><tr>
+            <td><strong>web-fetch</strong></td>
+            <td>fetches from the internet<br><span class="meta">recognised package</span></td>
+            <td>widely used package via uvx (no fixed version)<br><span class="meta mono">mcp-server-fetch</span></td>
+            <td>—</td>
+          </tr><tr>
+            <td><strong>billing-sync</strong></td>
+            <td>payments or accounting<br><span class="meta">guessed from its name</span></td>
+            <td>an online service Glasswing doesn&#39;t recognise (through the mcp-remote helper)<br><span class="meta mono">hooks.acme-billing.example.net</span></td>
+            <td>—</td>
+          </tr><tr>
+            <td><strong>notes</strong></td>
+            <td>unknown<br><span class="meta">Glasswing can&#39;t tell what this server can do</span></td>
+            <td>package Glasswing doesn&#39;t recognise via npx (no fixed version)<br><span class="meta mono">quick-notes-mcp</span></td>
+            <td>—</td>
+          </tr></tbody></table></div>
+        
+        
+      
+    </div>
+  
+    <div class="card">
+      <strong>Claude Code</strong>
+      
+        <div class="meta">1 settings file(s):
+          /Users/dana/.claude/settings.json</div>
+        <div class="meta">No MCP servers configured.</div>
+        <div class="meta">Permission rules: 3 allow. Risky ones are listed under Findings.</div>
+      
+    </div>
+  
+    <div class="card">
+      <strong>Cursor</strong>
+      
+        <div class="meta">1 settings file(s):
+          /Users/dana/.cursor/mcp.json</div>
+        <div class="scroll"><table>
+          <thead><tr><th>Server</th><th>What it can do</th><th>Where it comes from</th><th>File access</th></tr></thead><tbody>
+          <tr>
+            <td><strong>github</strong></td>
+            <td>code hosting or cloud infrastructure<br><span class="meta">guessed from its name</span></td>
+            <td>a widely known online service<br><span class="meta mono">api.githubcopilot.com</span></td>
+            <td>—</td>
+          </tr><tr>
+            <td><strong>case-files</strong></td>
+            <td>reads and writes files<br><span class="meta">recognised package</span></td>
+            <td>widely used package via npx (fixed version)<br><span class="meta mono">@modelcontextprotocol/server-filesystem</span></td>
+            <td>/Users/dana/Documents/Clients/Active</td>
+          </tr></tbody></table></div>
+        
+        
+      
+    </div>
+  
+    <div class="card">
+      <strong>VS Code (Copilot)</strong>
+      <span class="meta"> — no settings found on this computer</span>
+      
+    </div>
+  
+    <div class="card">
+      <strong>Windsurf / Devin Desktop</strong>
+      <span class="meta"> — no settings found on this computer</span>
+      
+    </div>
+  
+    <div class="card">
+      <strong>Gemini CLI</strong>
+      <span class="meta"> — no settings found on this computer</span>
+      
+    </div>
+  
+    <div class="card">
+      <strong>Codex CLI</strong>
+      <span class="meta"> — no settings found on this computer</span>
+      
+    </div>
+  
+    <div class="card">
+      <strong>Continue</strong>
+      <span class="meta"> — no settings found on this computer</span>
+      
+    </div>
+  
+
+  <h2>Activity</h2>
+  <div class="card"><p>This version does not read activity logs, so it cannot tell you what your AI tools actually opened or ran. It reports what they are <em>able</em> to do.</p></div>
+
+  <h2>Connections Glasswing cannot see</h2>
+  <div class="card">
+    <p>These live on each provider's own servers. Check them by hand:</p>
+    <ul><li><strong>Google Account</strong> — Apps and services with access to your Google account:
+      <a href="https://myaccount.google.com/connections" rel="noopener noreferrer">https://myaccount.google.com/connections</a></li><li><strong>Microsoft Account</strong> — Apps and services with access to your Microsoft account:
+      <a href="https://account.live.com/consent/Manage" rel="noopener noreferrer">https://account.live.com/consent/Manage</a></li><li><strong>GitHub</strong> — Authorized OAuth apps:
+      <a href="https://github.com/settings/applications" rel="noopener noreferrer">https://github.com/settings/applications</a></li><li><strong>GitHub</strong> — Installed GitHub Apps:
+      <a href="https://github.com/settings/installations" rel="noopener noreferrer">https://github.com/settings/installations</a></li><li><strong>Slack</strong> — Apps installed in your workspace:
+      <a href="https://slack.com/apps/manage" rel="noopener noreferrer">https://slack.com/apps/manage</a></li><li><strong>Claude</strong> — Connectors (Gmail, Drive, calendars and other connected apps):
+      <a href="https://claude.ai/customize/connectors" rel="noopener noreferrer">https://claude.ai/customize/connectors</a></li><li><strong>ChatGPT</strong> — Connected apps (formerly called connectors):
+      In ChatGPT, open Settings and choose Apps.</li><li><strong>Gemini</strong> — Connected apps:
+      <a href="https://gemini.google.com/apps" rel="noopener noreferrer">https://gemini.google.com/apps</a></li></ul>
+  </div>
+
+  <h2>What this scan could not see</h2>
+  <div class="card"><ul><li>Connectors that run on a provider&#39;s own servers (for example Gmail or Drive connected inside claude.ai, ChatGPT or Gemini). Use the checklist in this report.</li><li>MCP servers bundled inside Claude Code plugins and Claude Desktop extensions.</li><li>What your AI tools actually did. This version reads settings only; it does not read activity logs or chat history.</li><li>The contents of your files. Glasswing looks at AI tool settings, never at your documents.</li><li>Organisation-managed settings pushed by an administrator through device management.</li><li>Any AI app that is not listed under &#39;Apps checked&#39;, and project folders outside the locations it searched.</li><li>What an online (remote) server can do once connected. Glasswing sees the address, not the service behind it.</li></ul></div>
+
+  
+
+  <h2>For teams</h2>
+  <div class="card keelwise"><p>Need this visibility across a whole team rather than one computer?
+    <a href="https://keelwise.dev" rel="noopener noreferrer">Keelwise</a> gives businesses central control and audit of what their AI tools can reach.</p></div>
+
+  <footer>Generated on this computer by glasswing v0.1.0. Passwords and keys are masked, so this file is safe to share.
+    Nothing was sent anywhere.</footer>
+</div>
+<script>
+(function () {
+  var box = document.getElementById('findings'); if (!box) return;
+  var cards = [].slice.call(box.children), sev = 'all', app = '';
+  var rank = {critical: 4, high: 3, medium: 2, low: 1, info: 0};
+  function apply() {
+    cards.forEach(function (c) {
+      var ok = (sev === 'all' || c.dataset.sev === sev) && (!app || c.dataset.subject.indexOf(app) === 0);
+      c.style.display = ok ? '' : 'none';
+    });
+  }
+  document.querySelectorAll('#filters button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#filters button').forEach(function (x) { x.setAttribute('aria-pressed', 'false'); });
+      b.setAttribute('aria-pressed', 'true'); sev = b.dataset.sev; apply();
+    });
+  });
+  document.getElementById('appFilter').addEventListener('change', function (e) { app = e.target.value; apply(); });
+  document.getElementById('sortBy').addEventListener('change', function (e) {
+    var byApp = e.target.value === 'app';
+    cards.sort(function (a, b) {
+      if (byApp && a.dataset.subject !== b.dataset.subject) return a.dataset.subject < b.dataset.subject ? -1 : 1;
+      return (rank[b.dataset.sev] - rank[a.dataset.sev]) || (a.dataset.order - b.dataset.order);
+    }).forEach(function (c) { box.appendChild(c); });
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,46 +1,77 @@
-# Known-server table used to infer capability class + trust for common
-# MCP server packages, keyed by a substring match against the server's
-# command/args/package name. First match wins; unmatched servers fall back
-# to heuristic inference in analysis/capabilities.py.
-- match: "@modelcontextprotocol/server-filesystem"
-  capability: filesystem
-  trust: official
-- match: "@modelcontextprotocol/server-everything"
-  capability: filesystem
-  trust: official
-- match: "mcp-server-sqlite"
-  capability: database
-  trust: community
-- match: "@modelcontextprotocol/server-sequential-thinking"
-  capability: other
-  trust: official
-- match: "@modelcontextprotocol/server-github"
-  capability: cloud_infra
-  trust: official
-- match: "@modelcontextprotocol/server-gdrive"
-  capability: drive
-  trust: official
-- match: "@modelcontextprotocol/server-slack"
-  capability: email_or_chat
-  trust: official
-- match: "@modelcontextprotocol/server-brave-search"
-  capability: network
-  trust: official
-- match: "@modelcontextprotocol/server-puppeteer"
-  capability: browser
-  trust: official
-- match: "playwright"
-  capability: browser
-  trust: community
-- match: "server-postgres"
-  capability: database
-  trust: official
-- match: "stripe"
-  capability: payments
-  trust: community
-- match: "google-calendar"
-  capability: calendar
-  trust: community
-- match: "gmail"
-  capability: email_or_chat
-  trust: community
+# What Glasswing recognises. Matching is on the EXACT package/image name or
+# domain, never a substring, so a look-alike name is not mistaken for the
+# real thing. "Recognised" means widely used and identifiable -- it is not a
+# security endorsement, and the report says so.
+
+packages:
+  "@modelcontextprotocol/server-filesystem": filesystem
+  "@modelcontextprotocol/server-memory": other
+  "@modelcontextprotocol/server-sequential-thinking": other
+  "@modelcontextprotocol/server-everything": other
+  "@modelcontextprotocol/server-github": cloud_infra
+  "@modelcontextprotocol/server-gdrive": drive
+  "@modelcontextprotocol/server-slack": email_or_chat
+  "@modelcontextprotocol/server-brave-search": network
+  "@modelcontextprotocol/server-puppeteer": browser
+  "@modelcontextprotocol/server-postgres": database
+  "mcp-server-fetch": network
+  "mcp-server-git": filesystem
+  "mcp-server-sqlite": database
+  "mcp-server-time": other
+  "@playwright/mcp": browser
+  "chrome-devtools-mcp": browser
+  "mcp-remote": remote
+  "@upstash/context7-mcp": network
+  "@notionhq/notion-mcp-server": drive
+  "@stripe/mcp": payments
+  "@supabase/mcp-server-supabase": database
+  "firecrawl-mcp": network
+  "mcp/filesystem": filesystem
+  "ghcr.io/github/github-mcp-server": cloud_infra
+
+# Capability guessed from whole words in a package or server name. Only used
+# when the package is not in the table above, and always labelled a guess.
+name_hints:
+  filesystem: [filesystem, files, fs]
+  shell: [shell, bash, zsh, terminal, powershell]
+  browser: [browser, puppeteer, playwright, selenium, chrome]
+  email_or_chat: [gmail, outlook, email, mail, slack, imap, smtp, teams, discord]
+  calendar: [calendar, gcal]
+  drive: [gdrive, drive, dropbox, onedrive, sharepoint, notion]
+  crm: [hubspot, salesforce, crm]
+  database: [postgres, postgresql, mysql, sqlite, mongodb, mongo, redis, database, db]
+  payments: [stripe, paypal, payments, billing, quickbooks, xero]
+  cloud_infra: [aws, gcp, azure, kubernetes, k8s, terraform, github, gitlab, vercel]
+  network: [fetch, search, http, web, scrape, crawl]
+
+# Domains of widely known services. A remote server on any other domain is
+# reported as "not recognised" (medium) so the user confirms who runs it.
+domains:
+  - anthropic.com
+  - claude.ai
+  - github.com
+  - githubcopilot.com
+  - openai.com
+  - google.com
+  - googleapis.com
+  - microsoft.com
+  - azure.com
+  - atlassian.com
+  - notion.com
+  - linear.app
+  - stripe.com
+  - slack.com
+  - sentry.dev
+  - vercel.com
+  - supabase.com
+  - cloudflare.com
+  - zapier.com
+  - make.com
+  - asana.com
+  - hubspot.com
+  - intercom.com
+  - paypal.com
+  - figma.com
+  - canva.com
+  - huggingface.co
+  - upwork.com

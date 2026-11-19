@@ -1,11 +1,12 @@
-# Cloud/provider-side connections glasswing cannot see from the local
-# machine. Shown in the report as a manual checklist. Verify these URLs
-# periodically -- vendors move settings pages.
+# Connections that live on a provider's servers, which Glasswing cannot see
+# from this computer. Shown as a manual checklist. Last checked: 2026-11-20.
+# "url: null" means no stable direct link is documented; "where" says how to
+# get there instead.
 - provider: Google Account
-  what: "Third-party apps & services with account access"
+  what: "Apps and services with access to your Google account"
   url: "https://myaccount.google.com/connections"
 - provider: Microsoft Account
-  what: "Apps and services with access to your account"
+  what: "Apps and services with access to your Microsoft account"
   url: "https://account.live.com/consent/Manage"
 - provider: GitHub
   what: "Authorized OAuth apps"
@@ -14,14 +15,15 @@
   what: "Installed GitHub Apps"
   url: "https://github.com/settings/installations"
 - provider: Slack
-  what: "Installed apps and integrations"
+  what: "Apps installed in your workspace"
   url: "https://slack.com/apps/manage"
-- provider: Claude (claude.ai)
-  what: "Connectors and connected apps"
-  url: "https://claude.ai/settings/connectors"
-- provider: ChatGPT (chatgpt.com)
-  what: "Connectors and connected apps"
-  url: "https://chatgpt.com/#settings/Connectors"
-- provider: Gemini (gemini.google.com)
-  what: "Connected apps / extensions"
-  url: "https://myaccount.google.com/connections"
+- provider: Claude
+  what: "Connectors (Gmail, Drive, calendars and other connected apps)"
+  url: "https://claude.ai/customize/connectors"
+- provider: ChatGPT
+  what: "Connected apps (formerly called connectors)"
+  url: null
+  where: "In ChatGPT, open Settings and choose Apps."
+- provider: Gemini
+  what: "Connected apps"
+  url: "https://gemini.google.com/apps"

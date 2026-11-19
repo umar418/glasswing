@@ -1,83 +1,69 @@
-"""Redaction pass: the only thing ever sent to a cloud AI summary provider.
-
-Hard rules enforced here:
-- home directory is replaced with ~
-- file names inside sensitive-keyword folders are hashed, not shown in full
-- no secret values (findings already carry masked values only)
-- no raw argument values, ever
+"""The redaction pass for AI summaries: builds the only thing ever sent to a
+model. It starts from the already-redacted safe view (no secrets, no raw
+arguments) and additionally hides the home folder and the names of files in
+sensitive folders.
 """
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
 
-from glasswing.analysis.models import Finding, ScanResult
-from glasswing.analysis.rules import SENSITIVE_PATH_KEYWORDS
+from glasswing.discovery.paths import home_dir
 
-_HOME = str(Path.home())
+SENSITIVE_PATH_KEYWORDS = [
+    "medical", "health", "patient", "hipaa", "legal", "client", "case", "contract", "tax", "payroll", "bank",
+    "statement", "invoice", "passport", "ssn", "password", ".env", "secrets", ".ssh", ".aws", "keychain", "wallet",
+]
+_PATH_RE = re.compile(r"(?:~|/|[A-Za-z]:\\)[^\s,;:()\"']*")
 
 
 def _hash_name(name: str) -> str:
-    digest = hashlib.sha256(name.encode("utf-8")).hexdigest()[:8]
-    suffix = Path(name).suffix
-    return f"<redacted-{digest}>{suffix}"
+    return f"<name-{hashlib.sha256(name.encode('utf-8')).hexdigest()[:8]}>{Path(name).suffix}"
 
 
 def redact_path(raw: str | None) -> str | None:
     if not raw:
         return raw
-    text = raw.replace(_HOME, "~")
-    lowered = text.lower()
-    if any(kw in lowered for kw in SENSITIVE_PATH_KEYWORDS):
-        parts = text.replace("\\", "/").split("/")
-        parts[-1] = _hash_name(parts[-1]) if parts[-1] else parts[-1]
-        text = "/".join(parts)
-    return text
+    text = raw.replace(str(home_dir()), "~").replace(str(Path.home()), "~")
+    parts = text.replace("\\", "/").split("/")
+    for i, part in enumerate(parts[:-1]):
+        if any(kw in part.lower() for kw in SENSITIVE_PATH_KEYWORDS):
+            parts[i + 1:] = [_hash_name(p) if p else p for p in parts[i + 1:]]
+            break
+    return "/".join(parts)
 
 
-def redact_text(raw: str | None) -> str | None:
-    if not raw:
-        return raw
-    return raw.replace(_HOME, "~")
+def redact_for_model(text: str | None) -> str | None:
+    if not text:
+        return text
+    return _PATH_RE.sub(lambda m: redact_path(m.group(0)) or "", text)
 
 
-def redact_finding(finding: Finding) -> dict:
-    return {
-        "rule_id": finding.rule_id,
-        "severity": finding.severity,
-        "title": finding.title,
-        "subject": redact_path(finding.subject),
-        "detail": redact_path(finding.detail),
-    }
-
-
-def build_redacted_payload(scan: ScanResult) -> dict:
-    """The exact, structured, secret-free payload a cloud AI summary call
-    would receive. Deterministic and safe to show the user before consent.
-    """
-    severity_counts: dict[str, int] = {}
-    for f in scan.findings:
-        severity_counts[f.severity] = severity_counts.get(f.severity, 0) + 1
-
-    apps_summary = []
-    for app in scan.apps:
-        if not app.found:
+def build_redacted_payload(data: dict) -> dict:
+    """`data` is safe_view.safe_scan(...). Deterministic; shown to the user before any cloud call."""
+    apps = []
+    for app in data["apps"]:
+        if not app["found"]:
             continue
-        apps_summary.append(
-            {
-                "app": app.app_name,
-                "server_count": len(app.servers),
-                "capabilities": sorted({s.capability for s in app.servers}),
-                "secret_count": len(app.secrets) + sum(len(s.secrets) for s in app.servers),
-            }
-        )
-
+        apps.append({
+            "app": app["app_name"],
+            "allow_rule_count": app["permission_rule_counts"].get("allow", 0),
+            "servers": [
+                {"name": redact_for_model(s["name"]), "what_it_does": s["capability_label"], "how_we_know": s["capability_basis"],
+                 "source": s["source"], "file_scope": s["scope_label"]}
+                for s in app["servers"]
+            ],
+        })
     return {
-        "exposure_level": scan.exposure_level,
-        "os": scan.os_name,
-        "severity_counts": severity_counts,
-        "apps": apps_summary,
-        "findings": [redact_finding(f) for f in scan.findings],
-        "activity_event_count": len(scan.activity),
-        "warnings": [redact_text(w) for w in scan.warnings],
+        "exposure_level": data["exposure_level"],
+        "severity_counts": data["severity_counts"],
+        "apps": apps,
+        "findings": [
+            {"rule_id": f["rule_id"], "severity": f["severity"], "title": f["title"], "where": redact_for_model(f["subject"]),
+             "times_seen": f["count"], "fix": f["fix"]}
+            for f in data["findings"]
+        ],
+        "activity": "not collected by this version",
+        "could_not_see": data["not_covered"],
     }

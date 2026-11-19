@@ -1,51 +1,60 @@
 # Security
 
-Glasswing is read-only by default (`scan` and `report` never modify anything)
-and local-only by default (no telemetry, no update pings, and no network call of
-any kind during `scan --no-ai`). The only command that edits anything is
-`track enable` (Phase 3, not yet shipped), which backs up configs first and is
-undone by `track disable`.
+Glasswing only reads. `scan` and `report` never change a file, and
+`scan --no-ai` opens no network connection. Both properties are covered by
+automated tests.
 
-## Reporting a vulnerability
+## Reporting a problem
 
-Please open a private security advisory on GitHub
-(`Security` tab → `Report a vulnerability`) rather than a public issue, or email
-the maintainers listed in the repository. Include:
+Please report privately: on GitHub, open the **Security** tab and choose
+**Report a vulnerability**. Include the version (`glasswing --version`), your
+operating system, and steps to reproduce.
 
-- The glasswing version (`glasswing --version`)
-- Your OS
-- Steps to reproduce
-- What you expected vs. what happened
+These count as security bugs and are treated as urgent:
 
-We'll acknowledge within a few days.
+- A credential appearing unmasked in any output.
+- Content from a settings file running as code in the HTML report.
+- A settings file that crashes or hangs the scan.
+- Any network connection during `scan --no-ai`.
+- A finding that states something untrue about a configuration.
 
-## What glasswing reads
+## Files Glasswing reads
 
-Everything below is read for analysis; nothing is modified, and no file content
-is ever sent anywhere (only file *paths* and structured findings are, and only
-if you explicitly opt into a cloud AI summary).
+The complete, current list is
+[`src/glasswing/registry/apps.yaml`](src/glasswing/registry/apps.yaml). In summary:
 
-- Claude Desktop: `claude_desktop_config.json`, its MCP log files
-- Claude Code: `~/.claude.json`, `~/.claude/settings*.json`, project `.mcp.json`
-  and `.claude/settings*.json`, and `~/.claude/projects/**/*.jsonl` session
-  transcripts
+- Claude Desktop: `claude_desktop_config.json`
+- Claude Code: `~/.claude.json`, `~/.claude/settings.json`,
+  `~/.claude/settings.local.json`, the system-wide `managed-settings.json`, and
+  in each project `.mcp.json`, `.claude/settings.json`,
+  `.claude/settings.local.json`
 - Cursor: `~/.cursor/mcp.json`, project `.cursor/mcp.json`
-- VS Code: user and workspace `mcp.json`
-- Windsurf: `~/.codeium/windsurf/mcp_config.json`
-- Gemini CLI: `~/.gemini/settings.json`
-- Codex CLI: `~/.codex/config.toml`
-- Continue: `~/.continue/config.yaml` / `config.json`
-- Project directories under `~/code`, `~/projects`, `~/dev`, `~/Documents`,
-  `~/Desktop` (configurable), plus Claude Code's own known-project list
+- VS Code: `~/.copilot/mcp-config.json`, the user `mcp.json`, workspace
+  `.vscode/mcp.json`
+- Windsurf / Devin Desktop: `mcp_config.json` in its current and legacy locations
+- Gemini CLI: `~/.gemini/settings.json`, project `.gemini/settings.json`
+- Codex CLI: `~/.codex/config.toml`, project `.codex/config.toml`
+- Continue: `~/.continue/config.yaml`, `~/.continue/config.json`
 
-See [`src/glasswing/registry/apps.yaml`](src/glasswing/registry/apps.yaml) for
-the exact, current list — it's the single source of truth and may grow over
-time.
+Project folders are looked for under `~/code`, `~/projects`, `~/dev`, `~/src`,
+`~/Documents` and `~/Desktop` (three levels deep), in every project Claude Code
+has recorded, and in any folder you add. Glasswing does not open your documents;
+it looks only for the settings files named above. Files larger than 5 MB are
+skipped.
 
-## Secret handling
+## Files Glasswing writes
 
-Detected API keys/tokens are masked immediately (e.g. `sk-ant-…a1b2`) and the
-full value is never written to disk, printed, or included in any report or AI
-summary payload. See
-[`src/glasswing/parsers/secrets.py`](src/glasswing/parsers/secrets.py) and
-[`src/glasswing/summary/redact.py`](src/glasswing/summary/redact.py).
+Only its own: reports in `~/.glasswing/reports/` and its settings in
+`~/.glasswing/config.json`. API keys are never stored there.
+
+## How credentials are handled
+
+Settings files are treated as untrusted input. Every piece of text taken from
+one passes through a redaction step before it is shown, and the finished output
+is then checked once more against every credential found during the scan. See
+[`parsers/secrets.py`](src/glasswing/parsers/secrets.py) and
+[`report/safe_view.py`](src/glasswing/report/safe_view.py).
+
+Masking has limits. A short, ordinary-looking password that sits somewhere with
+no hint that it is a credential (for example, used as a folder name) cannot be
+told apart from normal text and will not be masked.

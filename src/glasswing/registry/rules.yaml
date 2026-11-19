@@ -1,107 +1,231 @@
-# Rule metadata. Each id is checked by matching logic in analysis/rules.py;
-# this file only holds the human-facing text and severity so wording can be
-# tuned without touching code. severity: info|low|medium|high|critical
+# Rule text and severity. The matching logic for each id lives in
+# analysis/rules.py. severity: info | low | medium | high | critical
+# Wording rule: state only what the config proves. Where Glasswing is
+# inferring, the text says "appears" / "looks like".
+
 - id: FS-ROOT-SCOPE
   severity: critical
-  title: "Filesystem access scoped to your whole drive or home folder"
+  title: "File access covers your whole disk or home folder"
   explanation: >
-    This AI tool's filesystem server is configured to reach your entire
-    home directory or disk, not a specific project folder. Anything it
-    reads or writes, it can do anywhere on your machine.
+    This file-access server is pointed at your entire disk, all user folders, or
+    your whole home folder instead of one project folder. The AI tool can read
+    (and usually change) any file there, including documents, saved passwords
+    and keys.
   fix: >
-    Edit the server's config and replace the broad path with one or more
-    specific project directories.
+    Open the config file shown and replace the broad path with the specific
+    folder(s) the tool actually needs.
+
+- id: FS-CREDENTIAL-FOLDER
+  severity: high
+  title: "File access includes a folder that stores keys or credentials"
+  explanation: >
+    This file-access server can reach a folder such as .ssh, .aws or .gnupg,
+    where login keys and cloud credentials are kept.
+  fix: >
+    Remove that folder from the server's allowed paths.
+
+- id: FS-PERSONAL-FOLDER
+  severity: medium
+  title: "File access covers an entire personal folder"
+  explanation: >
+    This file-access server can reach all of a folder like Documents, Desktop or
+    Downloads, which usually holds far more than one project.
+  fix: >
+    Point it at the specific sub-folder you work in instead of the whole folder.
 
 - id: SHELL-BLANKET-ALLOW
   severity: critical
-  title: "Shell command execution is auto-approved with no restriction"
+  title: "Any shell command can run without asking you"
   explanation: >
-    This tool can run arbitrary shell commands without asking you first
-    (a blanket allow rule such as Bash(*) or a bypass-permissions mode).
+    A permission rule lets this tool run every shell command without a
+    confirmation prompt. That is the same as letting it do anything you can do
+    on this computer.
   fix: >
-    Remove the blanket allow rule and require approval per command, or
-    scope it to a specific allowlist of commands.
+    Delete the rule shown from the "allow" list and allow only the specific
+    commands you need (for example "Bash(npm test:*)").
 
-- id: SECRET-PLAINTEXT-CONFIG
+- id: PERMISSION-PROMPTS-BYPASSED
+  severity: critical
+  title: "Permission prompts are switched off"
+  explanation: >
+    This tool is set to skip its permission prompts by default, so it acts
+    without checking with you first.
+  fix: >
+    Remove the "defaultMode" setting shown, or set it to "default".
+
+- id: SHELL-INTERPRETER-WILDCARD
   severity: high
-  title: "Plain-text API key found in an AI tool config"
+  title: "A rule allows running any code through an interpreter"
   explanation: >
-    A live-looking API key or token is stored in plain text inside a
-    config file this AI tool reads.
+    A permission rule allows a program such as python, node, bash or sudo with
+    any arguments. Because those programs run whatever they are given, this
+    allows arbitrary code without a prompt.
   fix: >
-    Move the value to an environment variable or your OS keychain, and
-    rotate the key since it may already be exposed in backups or syncs.
+    Replace the wildcard with the exact command you need, or delete the rule.
 
-- id: MCP-UNPINNED-UNKNOWN-PUBLISHER
-  severity: high
-  title: "MCP server runs via unpinned npx/uvx from an unrecognized publisher"
-  explanation: >
-    This server is launched with `npx -y` or `uvx` without a pinned
-    version, from a publisher not on our known-vendor list. Every run
-    can silently pull different, unreviewed code (a supply-chain risk).
-  fix: >
-    Pin an exact version, or switch to a package from a publisher you
-    recognize and trust.
-
-- id: AI-TOUCHED-CREDENTIAL-LOCATION
-  severity: high
-  title: "AI tool activity touched a credential location"
-  explanation: >
-    Logged activity shows a read or write inside .ssh, .aws, .env, or a
-    similar credential location.
-  fix: >
-    Review what was read/written there, rotate any exposed credentials,
-    and restrict that tool's filesystem scope to exclude the location.
-
-- id: MCP-REMOTE-UNKNOWN-DOMAIN
-  severity: high
-  title: "Remote MCP server points at an unrecognized domain"
-  explanation: >
-    This server talks to a remote URL (http/sse) that isn't a
-    well-known vendor domain, so data sent to it leaves your machine to
-    an unverified third party.
-  fix: >
-    Confirm the domain is one you trust before keeping this server
-    enabled; remove it if you don't recognize the operator.
-
-- id: EXFIL-PATH-READ-AND-NETWORK
+- id: SHELL-NETWORK-WILDCARD
   severity: medium
-  title: "Same tool can read sensitive files and also reach the network"
+  title: "A rule allows sending data anywhere on the internet"
   explanation: >
-    One server combines read access to sensitive-looking paths with the
-    ability to make outbound network calls — a path for data to leave
-    your machine without you noticing.
+    A permission rule allows a network tool such as curl or wget with any
+    arguments, so files or data could be uploaded to any address without a
+    prompt.
   fix: >
-    Split these capabilities across separate, narrowly-scoped servers,
-    or disable the network capability if you don't need it here.
+    Limit the rule to the specific address you need, or delete it.
 
-- id: SENSITIVE-FOLDER-ACCESSED-RECENTLY
+- id: SHELL-DESTRUCTIVE-WILDCARD
   severity: medium
-  title: "Sensitive-keyword folder accessed by AI in the last 30 days"
+  title: "A rule allows deleting or overwriting anything"
   explanation: >
-    Recent activity shows this AI tool reading or writing inside a
-    folder whose name matches a sensitive keyword (medical, legal,
-    tax, etc.).
+    A permission rule allows a destructive command such as rm with any
+    arguments, without a prompt.
   fix: >
-    Review the specific files touched and confirm that was intended;
-    narrow this tool's scope if it should not have reached that folder.
-
-- id: SERVER-UNUSED-60D
-  severity: low
-  title: "MCP server configured but unused for 60+ days"
-  explanation: >
-    This server hasn't shown any activity in over 60 days. Unused
-    access is still access — it adds risk with no benefit.
-  fix: >
-    Remove it from the config if you no longer need it ("remove what
-    you don't use").
+    Delete the rule so the tool asks before deleting things.
 
 - id: PERMISSIONS-BROAD-WRITE
   severity: high
-  title: "Broad write permission granted beyond a specific path"
+  title: "Files anywhere can be changed without asking you"
   explanation: >
-    A permission rule grants write access broadly rather than to a
-    specific path or command.
+    A permission rule lets this tool edit or create files across your whole
+    disk or home folder without a confirmation prompt.
   fix: >
-    Scope the permission rule down to the exact paths/commands this
-    tool actually needs.
+    Narrow the rule to a project folder, or delete it.
+
+- id: PERMISSIONS-BROAD-READ
+  severity: medium
+  title: "Files anywhere can be read without asking you"
+  explanation: >
+    A permission rule lets this tool read files across your whole disk or home
+    folder, or inside a credentials folder, without a confirmation prompt.
+  fix: >
+    Narrow the rule to a project folder, or delete it.
+
+- id: PERMISSIONS-BROAD-DIRECTORIES
+  severity: high
+  title: "Extra folder access covers your whole disk or home folder"
+  explanation: >
+    The "additionalDirectories" setting gives this tool file access to your
+    entire disk or home folder in every session.
+  fix: >
+    Remove the broad entry and list only the folders you need.
+
+- id: MCP-PROJECT-SERVERS-AUTO-APPROVED
+  severity: medium
+  title: "Servers from any project folder are approved automatically"
+  explanation: >
+    This setting approves every MCP server listed in a project's .mcp.json
+    without asking. Opening a downloaded or cloned folder could start a server
+    you never reviewed.
+  fix: >
+    Set "enableAllProjectMcpServers" to false and approve servers one by one.
+
+- id: MCP-SERVER-TRUST-BYPASS
+  severity: medium
+  title: "This server's actions are never confirmed with you"
+  explanation: >
+    The server is marked as trusted, so the app skips the confirmation prompt
+    for everything it does.
+  fix: >
+    Remove the "trust" setting for this server unless you fully control it.
+
+- id: CODEX-NO-SANDBOX-NO-APPROVAL
+  severity: critical
+  title: "Codex runs with no sandbox and no approval prompts"
+  explanation: >
+    Codex is configured with full disk and network access and never asks before
+    acting. Nothing stands between it and your whole computer.
+  fix: >
+    In the config file shown, set sandbox_mode to "workspace-write" and
+    approval_policy to "on-request".
+
+- id: CODEX-SANDBOX-DISABLED
+  severity: high
+  title: "Codex sandbox is switched off"
+  explanation: >
+    Codex is configured with sandbox_mode "danger-full-access", so commands it
+    runs are not confined to your project folder.
+  fix: >
+    Set sandbox_mode to "workspace-write".
+
+- id: SECRET-PLAINTEXT-CONFIG
+  severity: high
+  title: "A password or API key is stored in plain text"
+  explanation: >
+    A credential is written directly in this config file. Anyone or anything
+    that can read the file (backups, cloud sync, other apps, the AI tool
+    itself) can copy it.
+  fix: >
+    Replace the value with an environment-variable reference or your password
+    manager, then change (rotate) the credential, since it has been exposed.
+
+- id: SECRET-IN-URL
+  severity: medium
+  title: "A server address appears to contain an access token"
+  explanation: >
+    The address of this server includes what looks like a private token or
+    password. Anyone who sees the address can likely use the connection as you.
+  fix: >
+    Treat the address like a password. If the service offers header- or
+    login-based access, switch to that and regenerate the address.
+
+- id: SECRET-POSSIBLE
+  severity: low
+  title: "A value looks like it could be a credential"
+  explanation: >
+    A long random-looking value is stored in this server's settings. Glasswing
+    cannot tell whether it is a secret or just an identifier.
+  fix: >
+    Check the value. If it is a secret, move it out of the file and rotate it.
+
+- id: MCP-UNPINNED-UNRECOGNISED
+  severity: high
+  title: "Runs the newest version of a package Glasswing doesn't recognise"
+  explanation: >
+    This server is downloaded and run from the internet each time, with no fixed
+    version, and its package is not on Glasswing's list of widely used servers.
+    If the package is ever tampered with, the new code runs on your computer
+    automatically.
+  fix: >
+    Check who publishes the package. If you trust it, pin an exact version
+    (for example "name@1.2.3"); otherwise remove the server.
+
+- id: MCP-UNPINNED-RECOGNISED
+  severity: low
+  title: "Runs the newest version of a package with no fixed version"
+  explanation: >
+    This server uses a widely used package but downloads the newest version
+    each time, so an update you never reviewed can run automatically.
+  fix: >
+    Pin an exact version (for example "name@1.2.3").
+
+- id: MCP-REMOTE-UNRECOGNISED
+  severity: medium
+  title: "Connects to an online service Glasswing doesn't recognise"
+  explanation: >
+    This server runs on someone else's computers at the address shown. Whatever
+    the AI tool sends it leaves your machine. Glasswing does not recognise the
+    domain, which does not mean it is unsafe -- only that you should confirm
+    who runs it.
+  fix: >
+    Confirm you know and trust the operator of this address; remove the server
+    if you don't.
+
+- id: MCP-REMOTE-INSECURE-HTTP
+  severity: high
+  title: "Connects to an online service without encryption"
+  explanation: >
+    This server is reached over plain http://, so everything sent to it can be
+    read or altered by others on the network.
+  fix: >
+    Use the https:// address for this service, or remove the server.
+
+- id: EXFIL-PATH
+  severity: medium
+  title: "One app has both broad file access and a way to send data out"
+  explanation: >
+    The same app has a server with broad file access and another that reaches
+    the internet. Together they form a path for private files to leave your
+    computer if the AI is tricked by a malicious document or web page.
+  fix: >
+    Narrow the file access to a project folder, or remove the internet-facing
+    server you don't need.

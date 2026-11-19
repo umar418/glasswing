@@ -1,123 +1,365 @@
-"""Secret detection and masking.
+"""Secret detection, masking and text redaction.
 
-Hard rule: full secret values must never appear in any output. Every match
-is masked to a short, non-reversible-looking preview before it leaves this
-module.
+Two jobs, kept separate on purpose:
+
+* DETECTION decides what gets *reported* as a credential. It is conservative:
+  a known vendor format, a literal value in a credential-named field, or a
+  credential embedded in a URL. Anything weaker is labelled "possible".
+* REDACTION decides what is *hidden* from output. It is aggressive: anything
+  that could plausibly be a credential is masked, even if it is never
+  reported as a finding. Over-masking costs nothing; a leak costs trust.
 """
 from __future__ import annotations
 
+import html
+import json
 import math
 import re
 from collections import Counter
 from functools import lru_cache
 from importlib import resources
 from typing import Iterable
+from urllib.parse import urlsplit
 
 import yaml
 
 from glasswing.analysis.models import SecretFinding
 
+REDACTED = "<redacted>"
+REDACTED_ID = "<redacted-id>"
 
 _UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+_HEX_RE = re.compile(r"[0-9a-fA-F-]+")
+_URL_RE = re.compile(r"https?://[^\s\"'<>)\]]+", re.I)
+_ENV_REF_RE = re.compile(r"\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*|%[A-Za-z_][A-Za-z0-9_]*%")
+_OPAQUE_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{32,}(?![A-Za-z0-9_-])")
 
-
-def redact_url_path_ids(value: str) -> str:
-    """A remote MCP URL often embeds a per-connection token directly in the
-    path (e.g. https://host/mcp/c/<uuid>) -- that segment is effectively a
-    bearer credential, not just an identifier, so mask it like any secret.
-    """
-    if value.startswith("http://") or value.startswith("https://"):
-        return _UUID_RE.sub("<redacted-id>", value)
-    return value
+CRED_WORD = r"(?:api[-_]?key|apikey|access[-_]?key|secret|token|password|passwd|pwd|authorization|credential|private[-_]?key)"
+# Field names that hold a credential -- but not counters/limits like "max_tokens",
+# and not fields that hold the *name* of an env var or a helper command.
+_CRED_KEY_RE = re.compile(CRED_WORD, re.I)
+_NOT_CRED_KEY_RE = re.compile(
+    r"(?:max|min|num|count|limit|budget|usage|total|input|output|context)[-_ ]?tokens?|tokens?[-_ ]?(?:limit|count|budget|usage)"
+    r"|env[-_ ]?var|envvar|helper|[-_ ](?:file|path|url|uri|name|type|id)$",
+    re.I,
+)
+_BEARER_RE = re.compile(r"\b(Bearer|Basic)\s+([A-Za-z0-9._~+/=-]{6,})", re.I)
+_ASSIGN_RE = re.compile(
+    r"((?:--?|\b)[A-Za-z0-9_.-]*" + CRED_WORD + r"[A-Za-z0-9_-]*[\"']?\s*[:=]\s*[\"']?(?:(?:Bearer|Basic)\s+)?)([^\s\"'&,;)]{4,})",
+    re.I,
+)
+_FLAG_VALUE_RE = re.compile(r"(--[A-Za-z0-9-]*" + CRED_WORD + r"[A-Za-z0-9-]*\s+)([^\s\"'-][^\s\"']{3,})", re.I)
+_CRED_FLAG_RE = re.compile(r"^--?[A-Za-z0-9-]*" + CRED_WORD + r"[A-Za-z0-9-]*$", re.I)
+_PLACEHOLDER_WORDS = ("your", "example", "changeme", "change-me", "placeholder", "todo", "dummy", "insert", "replace")
 
 
 def mask_secret(value: str) -> str:
-    """Mask a secret value, keeping only a short prefix/suffix hint."""
+    """Short, non-reversible preview. Short values are hidden completely."""
     value = value.strip()
-    if len(value) <= 8:
-        return "*" * len(value)
-    prefix = value[:3]
-    suffix = value[-4:]
-    return f"{prefix}…{suffix}"
+    if len(value) < 20:
+        return REDACTED
+    return f"{value[:4]}…{value[-4:]}"
 
 
-def _shannon_entropy(s: str) -> float:
+def _entropy(s: str) -> float:
     if not s:
         return 0.0
     counts = Counter(s)
-    length = len(s)
-    return -sum((c / length) * math.log2(c / length) for c in counts.values())
+    n = len(s)
+    return -sum((c / n) * math.log2(c / n) for c in counts.values())
+
+
+def is_placeholder(value: str) -> bool:
+    """True for values that are references or dummies rather than a literal credential."""
+    v = value.strip()
+    v = re.sub(r"^(Bearer|Basic)\s+", "", v, flags=re.I).strip()
+    if len(v) < 4:
+        return True
+    if _ENV_REF_RE.search(v):
+        return True
+    if v.startswith("<") and v.endswith(">"):
+        return True
+    low = v.lower()
+    if any(w in low for w in _PLACEHOLDER_WORDS):
+        return True
+    if len(set(low)) <= 2:  # "xxxx", "****", "0000"
+        return True
+    if low in {"true", "false", "none", "null", "oauth", "oauth2", "basic", "bearer", "disabled", "enabled"}:
+        return True
+    return False
+
+
+def is_credential_key(key: str) -> bool:
+    return bool(_CRED_KEY_RE.search(key)) and not _NOT_CRED_KEY_RE.search(key)
+
+
+def looks_opaque(token: str, min_len: int = 32) -> bool:
+    """A random-looking token: long, mixes letters and digits, not just a hash/UUID."""
+    if len(token) < min_len or not re.fullmatch(r"[A-Za-z0-9_+=-]+", token):
+        return False  # paths, URLs and sentences are not tokens
+    if _HEX_RE.fullmatch(token):  # hashes, commit ids, UUIDs: identifiers, not credentials
+        return False
+    core = re.sub(r"[^A-Za-z0-9]", "", token)
+    letters = re.sub(r"[^A-Za-z]", "", core)
+    digit_ratio = (len(core) - len(letters)) / max(len(core), 1)
+    if not letters or digit_ratio == 0 or _entropy(token) < 3.8:
+        return False
+    if letters.islower() or letters.isupper():
+        # single-case: random base32/36 is digit-heavy; names like "prod-replica-eu-west-1" are not
+        mixes = sum(1 for a, b in zip(core, core[1:]) if a.isdigit() != b.isdigit())
+        return digit_ratio >= 0.15 and mixes / max(len(core) - 1, 1) >= 0.2  # digits interleaved, not "name-2024"
+    # mixed case: random text flips case constantly; CamelCaseWords2024 rarely does
+    pairs = [(a, b) for a, b in zip(core, core[1:]) if a.isalpha() and b.isalpha()]
+    flips = sum(1 for a, b in pairs if a.islower() != b.islower())
+    return digit_ratio >= 0.04 and flips / max(len(pairs), 1) >= 0.3
+
+
+def worth_masking(token: str) -> bool:
+    """Looser than looks_opaque(): used only to decide what to HIDE, never what to report.
+    Hides long hashes and anything with digits scattered through it or erratic letter case."""
+    if looks_opaque(token):
+        return True
+    core = re.sub(r"[^A-Za-z0-9]", "", token)
+    if len(core) < 28:
+        return False
+    digits = sum(c.isdigit() for c in core)
+    mixes = sum(1 for a, b in zip(core, core[1:]) if a.isdigit() != b.isdigit())
+    if digits >= 2 and mixes / (len(core) - 1) >= 0.08:
+        return True
+    pairs = [(a, b) for a, b in zip(core, core[1:]) if a.isalpha() and b.isalpha()]
+    flips = sum(1 for a, b in pairs if a.islower() != b.islower())
+    return len(pairs) >= 20 and flips / len(pairs) >= 0.3
 
 
 @lru_cache(maxsize=1)
-def _load_patterns() -> list[dict]:
-    raw = resources.files("glasswing.registry").joinpath("secret_patterns.yaml").read_text()
-    return yaml.safe_load(raw) or []
+def _vendor_patterns() -> list[tuple[dict, re.Pattern]]:
+    raw = resources.files("glasswing.registry").joinpath("secret_patterns.yaml").read_text(encoding="utf-8")
+    return [(p, re.compile(p["pattern"])) for p in (yaml.safe_load(raw) or [])]
 
 
-@lru_cache(maxsize=1)
-def _compiled_patterns() -> list[tuple[dict, re.Pattern]]:
-    out = []
-    for p in _load_patterns():
-        out.append((p, re.compile(p["pattern"])))
+def find_vendor_secrets(text: str) -> list[tuple[int, int, str, dict]]:
+    """Non-overlapping (start, end, value, pattern) matches of known credential formats."""
+    hits: list[tuple[int, int, str, dict]] = []
+    for pattern, rx in _vendor_patterns():
+        for m in rx.finditer(text):
+            value = m.group(0)
+            if pattern.get("random_body"):  # generic-looking prefix: the rest must look random, not like words
+                body = value.split("-", 1)[-1]
+                if not (re.search(r"[0-9]", body) and re.search(r"[a-z]", body) and re.search(r"[A-Z]", body)):
+                    continue
+            if any(m.start() < e and s < m.end() for s, e, _, _ in hits):
+                continue
+            hits.append((m.start(), m.end(), value, pattern))
+    return sorted(hits)
+
+
+# ---------------------------------------------------------------- URLs
+
+
+def _opaque_path_segment(seg: str) -> bool:
+    return bool(_UUID_RE.fullmatch(seg)) or looks_opaque(seg, min_len=20) or (len(seg) >= 32 and bool(re.fullmatch(r"[A-Za-z0-9_-]+", seg)))
+
+
+def redact_url(url: str) -> str:
+    """Keep scheme, host and readable path words; hide everything that could be a credential."""
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname or ""
+        port = f":{parts.port}" if parts.port else ""
+    except ValueError:
+        return REDACTED
+    if not host:
+        return REDACTED
+    userinfo = f"{REDACTED}@" if (parts.username or parts.password) else ""
+    path = "/".join(REDACTED_ID if _opaque_path_segment(seg) else seg for seg in parts.path.split("/"))
+    query = ""
+    if parts.query:
+        keys = [kv.split("=", 1)[0] for kv in parts.query.split("&") if kv]
+        query = "?" + "&".join(f"{k}={REDACTED}" for k in keys)
+    return f"{parts.scheme}://{userinfo}{host}{port}{path}{query}"
+
+
+def url_credential_signals(url: str) -> list[tuple[str, str]]:
+    """(description, raw value) for credentials embedded in a URL. Bare UUIDs are
+    masked on display but NOT reported: they are usually just identifiers."""
+    out: list[tuple[str, str]] = []
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return out
+    if parts.password and not is_placeholder(parts.password):
+        out.append(("password in the URL", parts.password))
+    for kv in parts.query.split("&"):
+        if "=" in kv:
+            k, v = kv.split("=", 1)
+            if v and is_credential_key(k) and not is_placeholder(v):
+                out.append((f"'{k}' value in the URL", v))
+    for seg in parts.path.split("/"):
+        if not _UUID_RE.fullmatch(seg) and not is_placeholder(seg) and looks_opaque(seg, min_len=24):
+            out.append(("long access token in the URL path", seg))
     return out
 
 
-def scan_text(text: str, source_path: str, key_hint: str | None = None) -> list[SecretFinding]:
-    """Scan a blob of text for secret-looking values. Returns masked findings only."""
-    if not text:
-        return []
-    findings: list[SecretFinding] = []
-    seen: set[str] = set()
-    for pattern, compiled in _compiled_patterns():
-        high_entropy_only = pattern.get("high_entropy_only", False)
-        group = pattern.get("group", 0)
-        for m in compiled.finditer(text):
-            try:
-                value = m.group(group)
-            except IndexError:
-                continue
-            if not value or value in seen:
-                continue
-            if high_entropy_only and _shannon_entropy(value) < 4.3:
-                continue
-            seen.add(value)
-            findings.append(
-                SecretFinding(
-                    pattern_id=pattern["id"],
-                    pattern_name=pattern["name"],
-                    source_path=source_path,
-                    masked_value=mask_secret(value),
-                    key_hint=key_hint,
-                )
-            )
-    return findings
+def url_host(url: str) -> str | None:
+    try:
+        return urlsplit(url).hostname
+    except ValueError:
+        return None
 
 
-def safe_arg(arg: str) -> str:
-    """Redact one command-line argument for display: full mask if it looks
-    like a secret, otherwise strip any opaque URL-path token (a connection
-    id in a remote MCP URL can itself act as a bearer credential).
-    """
-    if scan_text(arg, source_path="<arg>"):
-        return "<redacted: looks like a secret>"
-    return redact_url_path_ids(arg)
+# ---------------------------------------------------------------- redaction
+
+
+def _mask_match(m: re.Match) -> str:
+    value = m.group(2)
+    return m.group(0) if is_placeholder(value) else m.group(1) + REDACTED
+
+
+def _mask_bearer(m: re.Match) -> str:
+    return m.group(0) if is_placeholder(m.group(2)) else f"{m.group(1)} {REDACTED}"
+
+
+@lru_cache(maxsize=8192)
+def redact_text(text: str) -> str:
+    """Hide anything in a free-form string that could be a credential."""
+    if not text or len(text) < 6:
+        return text
+    hits = find_vendor_secrets(text)
+    if hits:
+        out, last = [], 0
+        for start, end, value, _ in hits:
+            out.append(text[last:start])
+            out.append(mask_secret(value))
+            last = end
+        out.append(text[last:])
+        text = "".join(out)
+    text = _URL_RE.sub(lambda m: redact_url(m.group(0)), text)
+    text = _ASSIGN_RE.sub(_mask_match, text)
+    text = _FLAG_VALUE_RE.sub(_mask_match, text)
+    text = _BEARER_RE.sub(_mask_bearer, text)
+    text = _OPAQUE_TOKEN_RE.sub(lambda m: mask_secret(m.group(0)) if worth_masking(m.group(0)) else m.group(0), text)
+    return text
+
+
+def safe_args(args: Iterable[str]) -> list[str]:
+    """Redact a command's arguments, including a value that follows a credential flag."""
+    out: list[str] = []
+    hide_next = False
+    for arg in args:
+        if hide_next and not arg.startswith("-") and not is_placeholder(arg):
+            out.append(REDACTED)
+        else:
+            out.append(redact_text(arg))
+        hide_next = bool(_CRED_FLAG_RE.match(arg))
+    return out
 
 
 def safe_command_line(command: str | None, args: Iterable[str]) -> str:
-    parts = [p for p in [command, *[safe_arg(a) for a in args]] if p]
-    return " ".join(parts)
+    return " ".join(p for p in [redact_text(command) if command else None, *safe_args(args)] if p)
 
 
-def scan_mapping(data, source_path: str, _key: str | None = None) -> list[SecretFinding]:
-    """Recursively scan a parsed JSON/YAML structure (dict/list/str) for secrets."""
-    findings: list[SecretFinding] = []
-    if isinstance(data, dict):
-        for k, v in data.items():
-            findings.extend(scan_mapping(v, source_path, str(k)))
-    elif isinstance(data, list):
-        for item in data:
-            findings.extend(scan_mapping(item, source_path, _key))
-    elif isinstance(data, str):
-        findings.extend(scan_text(data, source_path, key_hint=_key))
-    return findings
+def scrub(rendered: str, raw_values: Iterable[str]) -> str:
+    """Last line of defence: remove any detected raw secret from rendered output,
+    in plain, JSON-escaped and HTML-escaped form."""
+    for raw in sorted({v for v in raw_values if v and len(v) >= 6}, key=len, reverse=True):
+        mask = mask_secret(raw)
+        for variant in {raw, json.dumps(raw)[1:-1], html.escape(raw), json.dumps(raw, ensure_ascii=False)[1:-1]}:
+            if variant in rendered:
+                rendered = rendered.replace(variant, mask)
+    return rendered
+
+
+# ---------------------------------------------------------------- detection
+
+
+def _finding(kind: str, name: str, raw: str, source: str, where: str, confidence: str) -> SecretFinding:
+    return SecretFinding(
+        pattern_id=kind, pattern_name=name, source_path=source, masked_value=mask_secret(raw),
+        key_hint=where, confidence=confidence, raw=raw,
+    )
+
+
+def scan_string(value: str, source: str, where: str) -> list[SecretFinding]:
+    """Known-format credentials inside one string."""
+    return [_finding(p["id"], p["name"], v, source, where, "known-format") for _, _, v, p in find_vendor_secrets(value)]
+
+
+def scan_named_value(key: str, value: str, source: str, where: str) -> list[SecretFinding]:
+    """A literal value sitting in a field whose name says it is a credential."""
+    found = scan_string(value, source, where)
+    if found:
+        return found
+    if is_credential_key(key) and not is_placeholder(value):
+        raw = re.sub(r"^(Bearer|Basic)\s+", "", value.strip(), flags=re.I)
+        return [_finding("named-credential", f"Value of '{key}'", raw, source, where, "named-field")]
+    if looks_opaque(value.strip()) and not is_placeholder(value):
+        return [_finding("possible-credential", f"Random-looking value in '{key}'", value.strip(), source, where, "possible")]
+    return []
+
+
+def scan_url(url: str, source: str, where: str) -> list[SecretFinding]:
+    found = scan_string(url, source, where)
+    seen = {f.raw for f in found}
+    for description, raw in url_credential_signals(url):
+        if raw not in seen:
+            found.append(_finding("url-credential", description[0].upper() + description[1:], raw, source, where, "url"))
+    return found
+
+
+def scan_args(args: list[str], source: str, where: str) -> list[SecretFinding]:
+    found: list[SecretFinding] = []
+    prev = ""
+    for arg in args:
+        if _URL_RE.match(arg):
+            found.extend(scan_url(arg, source, where))
+        else:
+            hits = scan_string(arg, source, where)
+            if not hits:
+                m = _ASSIGN_RE.search(arg) or _BEARER_RE.search(arg)
+                if m and not is_placeholder(m.group(2)):
+                    hits = [_finding("named-credential", "Credential passed as a command argument", m.group(2), source, where, "named-field")]
+                elif _CRED_FLAG_RE.match(prev) and not arg.startswith("-") and not is_placeholder(arg):
+                    hits = [_finding("named-credential", f"Value of '{prev}'", arg, source, where, "named-field")]
+            found.extend(hits)
+        prev = arg
+    return found
+
+
+def iter_strings(data, budget: int = 200_000):
+    """Yield every string in a parsed config. Iterative, cycle-safe and bounded, so a
+    hostile file (YAML alias bomb, extreme nesting) cannot hang or crash the scan."""
+    stack = [data]
+    seen: set[int] = set()
+    while stack and budget > 0:
+        item = stack.pop()
+        budget -= 1
+        if isinstance(item, str):
+            yield item
+        elif isinstance(item, (dict, list)):
+            if id(item) in seen:
+                continue
+            seen.add(id(item))
+            if isinstance(item, dict):
+                stack.extend(k for k in item.keys() if isinstance(k, str))
+                stack.extend(item.values())
+            else:
+                stack.extend(item)
+
+
+def scan_whole_file(data, source: str) -> list[SecretFinding]:
+    """Known-format credentials anywhere in a config file."""
+    found: list[SecretFinding] = []
+    for s in iter_strings(data):
+        if len(s) >= 16:
+            found.extend(scan_string(s, source, "elsewhere in the file"))
+    return found
+
+
+def dedupe(findings: list[SecretFinding]) -> list[SecretFinding]:
+    order = {"known-format": 0, "named-field": 1, "url": 2, "possible": 3}
+    best: dict[str, SecretFinding] = {}
+    for f in findings:
+        cur = best.get(f.raw)
+        if cur is None or order[f.confidence] < order[cur.confidence]:
+            best[f.raw] = f
+    return list(best.values())

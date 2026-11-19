@@ -1,41 +1,45 @@
-"""Persisted user config: ~/.glasswing/config.json.
-
-Holds AI summary provider choice/consent and a couple of scan knobs. Never
-holds secrets -- API keys stay in environment variables.
+"""Persisted user settings: ~/.glasswing/config.json. Never holds secrets --
+API keys stay in environment variables.
 """
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
-APP_DIR = Path.home() / ".glasswing"
-CONFIG_PATH = APP_DIR / "config.json"
-REPORTS_DIR = APP_DIR / "reports"
+from glasswing.discovery.paths import home_dir
 
-DEFAULTS: dict[str, Any] = {
-    "ai_provider": None,  # null | "ollama" | "anthropic" | "openai" | "gemini"
-    "consented_providers": [],  # providers the user has explicitly approved a cloud call for
-    "extra_project_roots": [],
-    "history_lookback_days": 90,
-}
+AI_PROVIDERS = ("auto", "ollama", "anthropic", "none")
+DEFAULTS = {"ai_provider": "auto", "consented_providers": [], "extra_project_roots": []}
+
+
+def app_dir() -> Path:
+    return home_dir() / ".glasswing"
+
+
+def config_path() -> Path:
+    return app_dir() / "config.json"
+
+
+def reports_dir() -> Path:
+    return app_dir() / "reports"
 
 
 def load_config() -> dict:
-    if not CONFIG_PATH.is_file():
-        return dict(DEFAULTS)
-    try:
-        data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        return dict(DEFAULTS)
     merged = dict(DEFAULTS)
-    merged.update(data)
+    try:
+        data = json.loads(config_path().read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            merged.update({k: v for k, v in data.items() if k in DEFAULTS and isinstance(v, type(DEFAULTS[k]))})
+    except (OSError, ValueError):
+        pass
+    if merged["ai_provider"] not in AI_PROVIDERS:
+        merged["ai_provider"] = "auto"
     return merged
 
 
 def save_config(config: dict) -> None:
-    APP_DIR.mkdir(parents=True, exist_ok=True)
-    CONFIG_PATH.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    app_dir().mkdir(parents=True, exist_ok=True)
+    config_path().write_text(json.dumps(config, indent=2), encoding="utf-8")
 
 
 def mark_consented(provider: str) -> None:
@@ -43,7 +47,3 @@ def mark_consented(provider: str) -> None:
     if provider not in config["consented_providers"]:
         config["consented_providers"].append(provider)
     save_config(config)
-
-
-def has_consented(provider: str) -> bool:
-    return provider in load_config().get("consented_providers", [])

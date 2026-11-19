@@ -8,7 +8,7 @@ import yaml
 
 
 def _load_yaml(filename: str):
-    raw = resources.files("glasswing.registry").joinpath(filename).read_text()
+    raw = resources.files("glasswing.registry").joinpath(filename).read_text(encoding="utf-8")
     return yaml.safe_load(raw) or []
 
 
@@ -23,7 +23,8 @@ def load_rules() -> dict[str, dict]:
 
 
 @lru_cache(maxsize=1)
-def load_servers_table() -> list[dict]:
+def load_known() -> dict:
+    """{'packages': {name: capability}, 'name_hints': {capability: [words]}, 'domains': [..]}"""
     return _load_yaml("servers.yaml")
 
 

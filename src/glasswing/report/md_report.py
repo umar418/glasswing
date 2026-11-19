@@ -1,70 +1,63 @@
 from __future__ import annotations
 
-from glasswing.analysis.models import ScanResult
 from glasswing.discovery.registry import load_cloud_checklist
 
 
-def render_markdown(scan: ScanResult, ai_summary_markdown: str | None, template_summary: dict | None) -> str:
-    lines: list[str] = []
-    lines.append(f"# Glasswing report — exposure level: {scan.exposure_level}")
-    lines.append("")
-    lines.append(f"Scanned {scan.os_name} in {scan.duration_seconds:.1f}s. {len(scan.findings)} finding(s).")
-    lines.append("")
+def _line(text: str) -> str:
+    """Config-derived text on one markdown line, with markup characters neutralised."""
+    return " ".join(str(text).split()).replace("<", "&lt;").replace("|", "\\|").replace("`", "'")
 
+
+def render_markdown(data: dict, ai_summary_markdown: str | None, summary: dict) -> str:
+    out: list[str] = [f"# Glasswing report — exposure level: {data['exposure_level']}", ""]
+    out.append(f"Scanned on {data['started_at']} ({data['os']}), {data['files_read']} settings file(s) read, glasswing v{data['version']}.")
+    out.append("")
     if ai_summary_markdown:
-        lines.append(ai_summary_markdown.strip())
-        lines.append("")
-    elif template_summary:
-        lines.append(f"## Overall exposure: {template_summary['overall_level']}")
-        lines.append(template_summary["overall_reason"])
-        lines.append("")
-        lines.append("## What your AI tools can reach")
-        for app, caps in template_summary["reach_by_app"].items():
-            lines.append(f"- **{app}**: {', '.join(caps)}")
-        lines.append("")
-        lines.append("## Top fixes")
-        for fix in template_summary["top_fixes"]:
-            lines.append(f"- **[{fix['rule_id']}] {fix['title']}** — {fix['subject']}: {fix['fix']}")
-        lines.append("")
-        lines.append("## What this scan could not see")
-        for item in template_summary["cannot_see"]:
-            lines.append(f"- {item}")
-        lines.append("")
+        out += ["## AI-written summary", "", ai_summary_markdown.strip(), ""]
+    out += ["## Summary", "", summary["overall_reason"], ""]
 
-    lines.append("## Findings")
-    if not scan.findings:
-        lines.append("No findings.")
-    for f in sorted(scan.findings, key=lambda x: x.severity, reverse=True):
-        lines.append(f"- **[{f.severity.upper()}] {f.rule_id}** — {f.title} ({f.subject})")
-        lines.append(f"  - {f.explanation}")
-        lines.append(f"  - Fix: {f.fix}")
+    out += ["## What your AI tools can reach", ""]
+    if not summary["reach"]:
+        out.append("No AI app settings were found.")
+    for app in summary["reach"]:
+        out.append(f"### {app['app']}")
+        if not app["servers"]:
+            out.append("- No MCP servers configured.")
+        for s in app["servers"]:
+            scope = f" — file access: {s['scope']}" if s["scope"] else ""
+            out.append(f"- **{_line(s['name'])}**: {s['what']} ({s['basis']}); {s['source']}{scope}")
+        if app["allow_rules"]:
+            out.append(f"- {app['allow_rules']} 'always allow' permission rule(s)")
+        out.append("")
 
-    lines.append("")
-    lines.append("## Per-app inventory")
-    for app in scan.apps:
-        if not app.found:
-            continue
-        lines.append(f"### {app.app_name}")
-        lines.append(f"Config: {', '.join(app.config_paths)}")
-        for s in app.servers:
-            lines.append(f"- `{s.name}` — capability: {s.capability}, trust: {s.trust}")
+    out += ["## Findings", ""]
+    if not data["findings"]:
+        out.append("No findings.")
+    for f in data["findings"]:
+        times = f" (×{f['count']})" if f["count"] > 1 else ""
+        out.append(f"### [{f['severity'].upper()}] {f['title']}{times}")
+        out.append(f"- Rule: `{f['rule_id']}`")
+        out.append(f"- Where: {_line(f['subject'])}")
+        for d in f["details"]:
+            out.append(f"  - {_line(d)}")
+        if f["more_details"]:
+            out.append(f"  - …and {f['more_details']} more")
+        out.append(f"- Why it matters: {f['explanation']}")
+        out.append(f"- Fix: {f['fix']}")
+        out.append("")
 
-    lines.append("")
-    lines.append("## Cloud connections we cannot scan")
+    out += ["## Connections Glasswing cannot see (check these by hand)", ""]
     for item in load_cloud_checklist():
-        lines.append(f"- **{item['provider']}** — {item['what']}: {item['url']}")
-
-    if scan.warnings:
-        lines.append("")
-        lines.append("## Warnings (couldn't read)")
-        for w in scan.warnings:
-            lines.append(f"- {w}")
-
-    lines.append("")
-    lines.append(
-        "## Keelwise\n\nIf you need this same visibility and control across a whole team, "
-        "[Keelwise](https://keelwise.dev) brings centralized AI-access policy, auditing and alerts "
-        "to businesses that can't rely on everyone running this scan themselves."
-    )
-
-    return "\n".join(lines)
+        target = item.get("url") or item.get("where")
+        out.append(f"- **{item['provider']}** — {item['what']}: {target}")
+    out += ["", "## What this scan could not see", ""]
+    out += [f"- {x}" for x in data["not_covered"]]
+    if data["warnings"]:
+        out += ["", "## Files that could not be read", ""]
+        out += [f"- {_line(w)}" for w in data["warnings"]]
+    out += [
+        "", "## For teams", "",
+        "Need this visibility across a whole team rather than one computer? [Keelwise](https://keelwise.dev) "
+        "gives businesses central control and audit of what their AI tools can reach.", "",
+    ]
+    return "\n".join(out)
