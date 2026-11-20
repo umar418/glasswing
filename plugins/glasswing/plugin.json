@@ -1,0 +1,11 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "glasswing",
+  "version": "0.2.0",
+  "description": "Scan your AI tool settings and see, in plain language, what those tools can reach and what to lock down. Runs only on your computer.",
+  "author": { "name": "Glasswing contributors" },
+  "homepage": "https://github.com/umar418/glasswing",
+  "repository": "https://github.com/umar418/glasswing",
+  "license": "MIT",
+  "keywords": ["security", "mcp", "permissions", "audit"]
+}

@@ -1,0 +1,14 @@
+{
+  "name": "glasswing",
+  "description": "Glasswing: a local, read-only scanner that shows what your AI tools can reach.",
+  "owner": {
+    "name": "Glasswing contributors"
+  },
+  "plugins": [
+    {
+      "name": "glasswing",
+      "source": "./plugins/glasswing",
+      "description": "Scan your AI tool settings and see what those tools can reach and what to lock down."
+    }
+  ]
+}

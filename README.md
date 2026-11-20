@@ -149,6 +149,47 @@ exists.
 | An app's settings were not found | Add the project folder: `glasswing scan --project-root ~/some/folder`. |
 | "couldn't read ..." in the report | That file was missing, too large or malformed. It was skipped; the rest of the scan is unaffected. |
 
+## Use it from your AI assistant
+
+The same scan is packaged as a plugin, so you can ask your assistant to run it and
+explain the result. The plugin adds one skill, `glasswing-scan`. It runs
+`glasswing scan --no-ai --json` (read-only, no AI model contacted by Glasswing) and
+needs [`uv`](https://docs.astral.sh/uv/) installed.
+
+**Claude Code** (tested end to end):
+
+```text
+/plugin marketplace add umar418/glasswing
+/plugin install glasswing@glasswing
+```
+
+Then ask "scan my AI tool settings", or type `/glasswing:glasswing-scan`.
+
+**Codex CLI** (passes Codex's own plugin validator; not yet run in a live Codex
+session):
+
+```bash
+codex plugin marketplace add umar418/glasswing
+codex plugin add glasswing@glasswing
+```
+
+Start a new session, then ask "scan my AI tool settings".
+
+**Grok Build** (not tested): xAI's documentation says Grok Build reads Claude Code
+marketplaces and plugins, so adding this repository as a marketplace should work.
+The dependable route is to copy the skill into the shared skills folder that both
+Grok Build and Codex read:
+
+```bash
+git clone https://github.com/umar418/glasswing.git
+mkdir -p ~/.agents/skills
+cp -r glasswing/plugins/glasswing/skills/glasswing-scan ~/.agents/skills/
+```
+
+A note on what this means: your assistant sees the scan's output, which is already
+masked, and its explanation is written by that assistant's model. If the
+explanation and the scan output disagree, the scan output is right.
+
 ## Commands
 
 | Command | What it does |
